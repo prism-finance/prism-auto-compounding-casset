@@ -7,7 +7,6 @@ use cosmwasm_std::{
     StdResult, Uint128, WasmMsg,
 };
 use cw20::Cw20ExecuteMsg;
-use terra_cosmwasm::TerraMsgWrapper;
 
 pub fn execute_bond(
     mut deps: DepsMut,

@@ -4,7 +4,7 @@ use crate::state::{
 };
 use basset::hub::{Config, ExecuteMsg};
 use cosmwasm_std::{
-    attr, to_binary, Addr, CosmosMsg, Decimal, DepsMut, DistributionMsg, Env, MessageInfo,
+    attr, to_binary, Addr, CosmosMsg, Decimal, DepsMut, Env, MessageInfo,
     Response, StakingMsg, StdError, StdResult, WasmMsg,
 };
 
@@ -53,9 +53,6 @@ pub fn execute_update_config(
     _env: Env,
     info: MessageInfo,
     owner: Option<String>,
-    reward_contract: Option<String>,
-    token_contract: Option<String>,
-    airdrop_registry_contract: Option<String>,
 ) -> StdResult<Response> {
     // only owner must be able to send this message.
     let conf = CONFIG.load(deps.storage)?;
@@ -63,8 +60,6 @@ pub fn execute_update_config(
     if sender_raw != conf.creator {
         return Err(StdError::generic_err("unauthorized"));
     }
-
-    let mut messages: Vec<CosmosMsg> = vec![];
 
     if let Some(o) = owner {
         let owner_raw = deps.api.addr_canonicalize(o.as_str())?;
@@ -74,39 +69,8 @@ pub fn execute_update_config(
             Ok(last_config)
         })?;
     }
-    if let Some(reward) = reward_contract {
-        let reward_raw = deps.api.addr_canonicalize(reward.as_str())?;
-
-        CONFIG.update(deps.storage, |mut last_config| -> StdResult<Config> {
-            last_config.reward_contract = Some(reward_raw);
-            Ok(last_config)
-        })?;
-
-        // register the reward contract for automate reward withdrawal.
-        messages.push(CosmosMsg::Distribution(
-            DistributionMsg::SetWithdrawAddress { address: reward },
-        ));
-    }
-
-    if let Some(token) = token_contract {
-        let token_raw = deps.api.addr_canonicalize(token.as_str())?;
-
-        CONFIG.update(deps.storage, |mut last_config| -> StdResult<Config> {
-            last_config.token_contract = Some(token_raw);
-            Ok(last_config)
-        })?;
-    }
-
-    if let Some(airdrop) = airdrop_registry_contract {
-        let airdrop_raw = deps.api.addr_canonicalize(airdrop.as_str())?;
-        CONFIG.update(deps.storage, |mut last_config| -> StdResult<Config> {
-            last_config.airdrop_registry_contract = Some(airdrop_raw);
-            Ok(last_config)
-        })?;
-    }
 
     Ok(Response::new()
-        .add_messages(messages)
         .add_attributes(vec![attr("action", "update_config")]))
 }
 
@@ -194,9 +158,7 @@ pub fn execute_deregister_validator(
                 amount: delegation.amount,
             }));
 
-            let msg = ExecuteMsg::UpdateGlobalIndex {
-                airdrop_hooks: None,
-            };
+            let msg = ExecuteMsg::UpdateGlobalIndex {};
             messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
                 contract_addr: env.contract.address.to_string(),
                 msg: to_binary(&msg)?,

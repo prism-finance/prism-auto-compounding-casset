@@ -1,5 +1,5 @@
-use cosmwasm_std::{Decimal, Uint128};
 use cosmwasm_bignumber::Decimal256;
+use cosmwasm_std::{Decimal, Uint128};
 
 const DECIMAL_FRACTIONAL: Uint128 = Uint128::new(1_000_000_000u128);
 
@@ -10,7 +10,7 @@ pub fn decimal_division(a: Uint128, b: Decimal) -> Uint128 {
 }
 
 /// return a * b
-pub fn decimal_multiplication_in_256(a: Decimal, b: Decimal) -> Decimal {
+pub fn _decimal_multiplication_in_256(a: Decimal, b: Decimal) -> Decimal {
     let a_u256: Decimal256 = a.into();
     let b_u256: Decimal256 = b.into();
     let c_u256: Decimal = (b_u256 * a_u256).into();
@@ -26,7 +26,7 @@ pub fn decimal_summation_in_256(a: Decimal, b: Decimal) -> Decimal {
 }
 
 /// return a - b
-pub fn decimal_subtraction_in_256(a: Decimal, b: Decimal) -> Decimal {
+pub fn _decimal_subtraction_in_256(a: Decimal, b: Decimal) -> Decimal {
     let a_u256: Decimal256 = a.into();
     let b_u256: Decimal256 = b.into();
     let c_u256: Decimal = (a_u256 - b_u256).into();

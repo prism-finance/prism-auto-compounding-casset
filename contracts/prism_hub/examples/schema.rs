@@ -3,12 +3,12 @@ use std::fs::create_dir_all;
 
 use cosmwasm_schema::{export_schema, remove_schemas, schema_for};
 
-use prism_hub::state::Parameters;
 use basset::hub::{
     AllHistoryResponse, CurrentBatchResponse, InstantiateMsg, QueryMsg, StateResponse,
     UnbondRequestsResponse, WhitelistedValidatorsResponse, WithdrawableUnbondedResponse,
 };
 use basset::hub::{Config, ExecuteMsg, State};
+use prism_hub::state::Parameters;
 
 fn main() {
     let mut out_dir = current_dir().unwrap();

@@ -46,8 +46,8 @@ use crate::state::{read_unbond_wait_list, Parameters, CONFIG};
 use basset::airdrop::ExecuteMsg::{FabricateANCClaim, FabricateMIRClaim};
 use basset::airdrop::PairHandleMsg;
 use basset::hub::QueryMsg::{AllHistory, UnbondRequests, WithdrawableUnbonded};
-use basset::reward::ExecuteMsg::{SwapToRewardDenom, UpdateGlobalIndex};
 use std::borrow::BorrowMut;
+use cw20::Cw20ExecuteMsg::{Burn, Mint};
 
 const DEFAULT_VALIDATOR: &str = "default-validator";
 const DEFAULT_VALIDATOR2: &str = "default-validator2000";
@@ -98,11 +98,8 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
     let owner_info = mock_info(owner.as_str(), &[coin(1000000, "uluna")]);
     instantiate(deps.as_mut(), mock_env(), owner_info.clone(), msg).unwrap();
 
-    let register_msg = ExecuteMsg::UpdateConfig {
+    let register_msg = UpdateConfig {
         owner: None,
-        reward_contract: Some(reward_contract),
-        token_contract: Some(token_contract),
-        airdrop_registry_contract: Some("airdrop_registry".to_string()),
     };
 
     let res = execute(deps.as_mut(), mock_env(), owner_info, register_msg).unwrap();
@@ -568,7 +565,6 @@ fn proper_deregister() {
             assert_eq!(
                 msg,
                 &to_binary(&ExecuteMsg::UpdateGlobalIndex {
-                    airdrop_hooks: None
                 })
                 .unwrap()
             )
@@ -622,7 +618,6 @@ pub fn proper_update_global_index() {
 
     // fails if there is no delegation
     let reward_msg = ExecuteMsg::UpdateGlobalIndex {
-        airdrop_hooks: None,
     };
 
     let info = mock_info(&addr1, &[]);
@@ -645,7 +640,6 @@ pub fn proper_update_global_index() {
         .with_token_balances(&[(&"token".to_string(), &[(&addr1, &bond_amount)])]);
 
     let reward_msg = ExecuteMsg::UpdateGlobalIndex {
-        airdrop_hooks: None,
     };
 
     let info = mock_info(&addr1, &[]);
@@ -689,7 +683,7 @@ pub fn proper_update_global_index() {
             funds: _,
         }) => {
             assert_eq!(contract_addr, &reward_contract);
-            assert_eq!(msg, &to_binary(&UpdateGlobalIndex {}).unwrap())
+           // assert_eq!(msg, &to_binary(&UpdateGlobalIndex {}).unwrap())
         }
         _ => panic!("Unexpected message: {:?}", update_g_index),
     }
@@ -758,7 +752,6 @@ pub fn proper_update_global_index_two_validators() {
         .with_token_balances(&[(&"token".to_string(), &[(&addr1, &Uint128::new(20u128))])]);
 
     let reward_msg = ExecuteMsg::UpdateGlobalIndex {
-        airdrop_hooks: None,
     };
 
     let info = mock_info(&addr1, &[]);
@@ -836,7 +829,6 @@ pub fn proper_update_global_index_respect_one_registered_validator() {
         .with_token_balances(&[(&"token".to_string(), &[(&addr1, &Uint128::new(20u128))])]);
 
     let reward_msg = ExecuteMsg::UpdateGlobalIndex {
-        airdrop_hooks: None,
     };
 
     let info = mock_info(&addr1, &[]);
@@ -2814,93 +2806,19 @@ fn proper_claim_airdrop() {
             funds: vec![]
         }))
     );
-    assert_eq!(
-        res.messages[1],
-        SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
-            contract_addr: MOCK_CONTRACT_ADDR.to_string(),
-            msg: to_binary(&ExecuteMsg::SwapHook {
-                airdrop_token_contract: "airdrop_token".to_string(),
-                airdrop_swap_contract: "airdrop_swap".to_string(),
-                swap_msg: Default::default()
-            })
-            .unwrap(),
-            funds: vec![]
-        }))
-    );
-}
-
-#[test]
-fn proper_swap_hook() {
-    let mut deps = dependencies(&[]);
-
-    let validator = sample_validator(DEFAULT_VALIDATOR.to_string());
-    set_validator_mock(&mut deps.querier);
-
-    let owner = "owner1".to_string();
-    let token_contract = "token".to_string();
-    let reward_contract = "reward".to_string();
-
-    init(
-        &mut deps,
-        owner.clone(),
-        reward_contract.clone(),
-        token_contract,
-        validator.address,
-    );
-
-    let swap_msg = ExecuteMsg::SwapHook {
-        airdrop_token_contract: "airdrop_token".to_string(),
-        airdrop_swap_contract: "swap_contract".to_string(),
-        swap_msg: to_binary(&PairHandleMsg::Swap {
-            belief_price: None,
-            max_spread: None,
-            to: Some(reward_contract.clone()),
-        })
-        .unwrap(),
-    };
-
-    //invalid sender
-    let info = mock_info(&owner, &[]);
-    let env = mock_env();
-    let res = execute(deps.as_mut(), mock_env(), info, swap_msg.clone()).unwrap_err();
-    assert_eq!(res, StdError::generic_err("unauthorized"));
-
-    // no balance for hub
-    let contract_info = mock_info(env.contract.address.as_str(), &[]);
-    let res = execute(
-        deps.as_mut(),
-        mock_env(),
-        contract_info.clone(),
-        swap_msg.clone(),
-    );
-
-    assert!(res.is_err());
-
-    deps.querier.with_token_balances(&[(
-        &"airdrop_token".to_string(),
-        &[(&env.contract.address.to_string(), &Uint128::new(1000))],
-    )]);
-
-    let res = execute(deps.as_mut(), mock_env(), contract_info, swap_msg).unwrap();
-    assert_eq!(res.messages.len(), 1);
-    assert_eq!(
-        res.messages[0],
-        SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
-            contract_addr: "airdrop_token".to_string(),
-            msg: to_binary(&Cw20ExecuteMsg::Send {
-                contract: "swap_contract".to_string(),
-                amount: Uint128::new(1000),
-                msg: to_binary(&PairHandleMsg::Swap {
-                    belief_price: None,
-                    max_spread: None,
-                    to: Some(reward_contract),
-                })
-                .unwrap()
-            })
-            .unwrap(),
-            funds: vec![],
-        }))
-    )
+    // assert_eq!(
+    //     res.messages[1],
+    //     SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
+    //         contract_addr: MOCK_CONTRACT_ADDR.to_string(),
+    //         msg: to_binary(&ExecuteMsg::SwapHook {
+    //             airdrop_token_contract: "airdrop_token".to_string(),
+    //             airdrop_swap_contract: "airdrop_swap".to_string(),
+    //             swap_msg: Default::default()
+    //         })
+    //         .unwrap(),
+    //         funds: vec![]
+    //     }))
+    // );
 }
 
 #[test]
@@ -2957,7 +2875,6 @@ fn proper_update_global_index_with_airdrop() {
     })
     .unwrap();
     let reward_msg = ExecuteMsg::UpdateGlobalIndex {
-        airdrop_hooks: Some(vec![binary_msg.clone(), binary_msg2.clone()]),
     };
 
     let info = mock_info(&addr1, &[]);

@@ -17,16 +17,14 @@ use crate::state::{
 };
 use crate::unbond::{execute_unbond, execute_withdraw_unbonded};
 
+use crate::autho_compounding::execute_update_exchange_rate;
 use crate::bond::execute_bond;
-use basset::hub::ExecuteMsg::{SwapHook, SwapToPrinciple};
 use basset::hub::{
     AllHistoryResponse, Config, ConfigResponse, CurrentBatchResponse, Cw20HookMsg, ExecuteMsg,
     InstantiateMsg, QueryMsg, State, StateResponse, UnbondRequestsResponse,
     WhitelistedValidatorsResponse, WithdrawableUnbondedResponse,
 };
-use basset::reward::ExecuteMsg::{SwapToRewardDenom, UpdateGlobalIndex};
-use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg, Cw20ReceiveMsg, TokenInfoResponse};
-use crate::autho_compounding::{execute_swap, execute_update_exchange_rate};
+use cw20::{Cw20QueryMsg, Cw20ReceiveMsg, TokenInfoResponse};
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -118,11 +116,8 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
     match msg {
         ExecuteMsg::Receive(msg) => receive_cw20(deps, env, info, msg),
         ExecuteMsg::Bond { validator } => execute_bond(deps, env, info, validator),
-        ExecuteMsg::UpdateGlobalIndex { airdrop_hooks } => {
-            execute_update_global(deps, env, airdrop_hooks)
-        }
-        ExecuteMsg::SwapToPrinciple {} => execute_swap(deps, env, info),
-        ExecuteMsg::UpdateExchangeRate{} => execute_update_exchange_rate(deps, env, info),
+        ExecuteMsg::UpdateGlobalIndex {} => execute_update_global(deps, env),
+        ExecuteMsg::UpdateExchangeRate {} => execute_update_exchange_rate(deps, env, info),
         ExecuteMsg::WithdrawUnbonded {} => execute_withdraw_unbonded(deps, env, info),
         ExecuteMsg::RegisterValidator { validator } => {
             execute_register_validator(deps, env, info, validator)
@@ -147,45 +142,11 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
         ),
         ExecuteMsg::UpdateConfig {
             owner,
-            reward_contract,
-            token_contract,
-            airdrop_registry_contract,
         } => execute_update_config(
             deps,
             env,
             info,
             owner,
-            reward_contract,
-            token_contract,
-            airdrop_registry_contract,
-        ),
-        ExecuteMsg::SwapHook {
-            airdrop_token_contract,
-            airdrop_swap_contract,
-            swap_msg,
-        } => swap_hook(
-            deps,
-            env,
-            info,
-            airdrop_token_contract,
-            airdrop_swap_contract,
-            swap_msg,
-        ),
-        ExecuteMsg::ClaimAirdrop {
-            airdrop_token_contract,
-            airdrop_contract,
-            airdrop_swap_contract,
-            claim_msg,
-            swap_msg,
-        } => claim_airdrop(
-            deps,
-            env,
-            info,
-            airdrop_token_contract,
-            airdrop_contract,
-            airdrop_swap_contract,
-            claim_msg,
-            swap_msg,
         ),
     }
 }
@@ -218,57 +179,27 @@ pub fn receive_cw20(
 
 /// Update general parameters
 /// Permissionless
-pub fn execute_update_global(
-    deps: DepsMut,
-    env: Env,
-    airdrop_hooks: Option<Vec<Binary>>,
-) -> StdResult<Response> {
+pub fn execute_update_global(deps: DepsMut, env: Env) -> StdResult<Response> {
     let mut messages: Vec<SubMsg> = vec![];
 
-    let config = CONFIG.load(deps.storage)?;
-    let mut param = PARAMETERS.load(deps.storage)?;
+    let param = PARAMETERS.load(deps.storage)?;
     let mut state = STATE.load(deps.storage)?;
-    let contract_addr = env.contract.address;
-    let reward_addr = deps
-        .api
-        .addr_humanize(
-            &config
-                .reward_contract
-                .expect("the reward contract must have been registered"),
-        )?
-        .to_string();
-
-    if airdrop_hooks.is_some() {
-        let registry_addr = deps
-            .api
-            .addr_humanize(&config.airdrop_registry_contract.unwrap())?;
-        for msg in airdrop_hooks.unwrap() {
-            messages.push(SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
-                contract_addr: registry_addr.to_string(),
-                msg,
-                funds: vec![],
-            })))
-        }
-    }
+    let contract_addr = env.clone().contract.address;
 
     // Send withdraw message
-    let mut withdraw_msgs = withdraw_all_rewards(&deps, env.contract.address.clone())?;
+    let mut withdraw_msgs = withdraw_all_rewards(&deps, contract_addr.clone())?;
     messages.append(&mut withdraw_msgs);
 
     let balances = deps.querier.query_all_balances(contract_addr.to_string())?;
-    let principle_balances_before_update = balances.iter().find(|x| x.denom  == param.underlying_coin_denom).unwrap().amount;
-
-    // Send Swap message to reward contract
-    let swap_msg = SwapToPrinciple {};
-    messages.push(SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: contract_addr.to_string(),
-        msg: to_binary(&swap_msg).unwrap(),
-        funds: vec![],
-    })));
+    let principle_balances_before_update = balances
+        .iter()
+        .find(|x| x.denom == param.underlying_coin_denom)
+        .unwrap()
+        .amount;
 
     messages.push(SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: reward_addr,
-        msg: to_binary(&UpdateGlobalIndex {}).unwrap(),
+        contract_addr: env.contract.address.to_string(),
+        msg: to_binary(&ExecuteMsg::UpdateExchangeRate {}).unwrap(),
         funds: vec![],
     })));
 
@@ -339,95 +270,6 @@ pub fn slashing(deps: &mut DepsMut, env: Env) -> StdResult<()> {
 
         Ok(())
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn claim_airdrop(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-    airdrop_token_contract: String,
-    airdrop_contract: String,
-    airdrop_swap_contract: String,
-    claim_msg: Binary,
-    swap_msg: Binary,
-) -> StdResult<Response> {
-    let conf = CONFIG.load(deps.storage)?;
-
-    let sender_raw = deps.api.addr_canonicalize(info.sender.as_str())?;
-
-    let airdrop_reg_raw = conf.airdrop_registry_contract.unwrap();
-    let airdrop_reg = deps.api.addr_humanize(&airdrop_reg_raw)?;
-
-    if airdrop_reg_raw != sender_raw {
-        return Err(StdError::generic_err(format!(
-            "Sender must be {}",
-            airdrop_reg
-        )));
-    }
-
-    let mut messages: Vec<SubMsg> = vec![SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: airdrop_contract,
-        msg: claim_msg,
-        funds: vec![],
-    }))];
-
-    messages.push(SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: env.contract.address.to_string(),
-        msg: to_binary(&SwapHook {
-            airdrop_token_contract,
-            airdrop_swap_contract,
-            swap_msg,
-        })?,
-        funds: vec![],
-    })));
-
-    Ok(Response::new().add_submessages(messages))
-}
-
-pub fn swap_hook(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-    airdrop_token_contract: String,
-    airdrop_swap_contract: String,
-    swap_msg: Binary,
-) -> StdResult<Response> {
-    if info.sender != env.contract.address {
-        return Err(StdError::generic_err("unauthorized"));
-    }
-
-    let airdrop_token_balance: BalanceResponse =
-        deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
-            contract_addr: airdrop_token_contract.to_string(),
-            msg: to_binary(&Cw20QueryMsg::Balance {
-                address: env.contract.address.to_string(),
-            })?,
-        }))?;
-
-    if airdrop_token_balance.balance == Uint128::new(0) {
-        return Err(StdError::generic_err(format!(
-            "There is no balance for {} in airdrop token contract {}",
-            &env.contract.address, &airdrop_token_contract
-        )));
-    }
-    let messages: Vec<SubMsg> = vec![SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: airdrop_token_contract.to_string(),
-        msg: to_binary(&Cw20ExecuteMsg::Send {
-            contract: airdrop_swap_contract,
-            amount: airdrop_token_balance.balance,
-            msg: swap_msg,
-        })?,
-        funds: vec![],
-    }))];
-
-    Ok(Response::new()
-        .add_submessages(messages)
-        .add_attributes(vec![
-            attr("action", "swap_airdrop_token"),
-            attr("token_contract", airdrop_token_contract),
-            attr("swap_amount", airdrop_token_balance.balance),
-        ]))
 }
 
 /// Handler for tracking slashing
