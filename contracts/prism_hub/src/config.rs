@@ -1,11 +1,10 @@
 use crate::state::{
-    read_validators, remove_white_validators, store_white_validators, Parameters, CONFIG,
-    PARAMETERS,
+    read_validators, remove_white_validators, store_white_validators, CONFIG, PARAMETERS,
 };
-use basset::hub::{Config, ExecuteMsg};
+use basset::hub::{Config, ExecuteMsg, Parameters};
 use cosmwasm_std::{
-    attr, to_binary, Addr, CosmosMsg, Decimal, DepsMut, Env, MessageInfo,
-    Response, StakingMsg, StdError, StdResult, WasmMsg,
+    attr, to_binary, Addr, CosmosMsg, Decimal, DepsMut, Env, MessageInfo, Response, StakingMsg,
+    StdError, StdResult, WasmMsg,
 };
 
 use rand::{Rng, SeedableRng, XorShiftRng};
@@ -35,7 +34,6 @@ pub fn execute_update_params(
         epoch_period: epoch_period.unwrap_or(params.epoch_period),
         underlying_coin_denom: params.underlying_coin_denom,
         unbonding_period: unbonding_period.unwrap_or(params.unbonding_period),
-        principle_balance_before_update_global_index: Default::default(),
         peg_recovery_fee: peg_recovery_fee.unwrap_or(params.peg_recovery_fee),
         er_threshold: er_threshold.unwrap_or(params.er_threshold),
         reward_denom: params.reward_denom,
@@ -53,6 +51,7 @@ pub fn execute_update_config(
     _env: Env,
     info: MessageInfo,
     owner: Option<String>,
+    token_contract: Option<String>,
 ) -> StdResult<Response> {
     // only owner must be able to send this message.
     let conf = CONFIG.load(deps.storage)?;
@@ -70,8 +69,16 @@ pub fn execute_update_config(
         })?;
     }
 
-    Ok(Response::new()
-        .add_attributes(vec![attr("action", "update_config")]))
+    if let Some(token) = token_contract {
+        let token_raw = deps.api.addr_canonicalize(token.as_str())?;
+
+        CONFIG.update(deps.storage, |mut last_config| -> StdResult<Config> {
+            last_config.token_contract = Some(token_raw);
+            Ok(last_config)
+        })?;
+    }
+
+    Ok(Response::new().add_attributes(vec![attr("action", "update_config")]))
 }
 
 /// Register a white listed validator.

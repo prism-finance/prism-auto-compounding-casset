@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 pub type UnbondRequest = Vec<(u64, Uint128)>;
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug,PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
     pub epoch_period: u64,
     pub underlying_coin_denom: String,
@@ -14,6 +14,22 @@ pub struct InstantiateMsg {
     pub er_threshold: Decimal,
     pub reward_denom: String,
     pub validator: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq,JsonSchema)]
+pub struct Parameters {
+    pub epoch_period: u64,
+    pub underlying_coin_denom: String,
+    pub unbonding_period: u64,
+    pub peg_recovery_fee: Decimal,
+    pub er_threshold: Decimal,
+    pub reward_denom: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug,PartialEq, JsonSchema)]
+pub struct CurrentBatch {
+    pub id: u64,
+    pub requested_with_fee: Uint128,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, Default)]
@@ -32,9 +48,7 @@ pub struct State {
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct Config {
     pub creator: CanonicalAddr,
-    pub reward_contract: Option<CanonicalAddr>,
     pub token_contract: Option<CanonicalAddr>,
-    pub airdrop_registry_contract: Option<CanonicalAddr>,
 }
 
 impl State {
@@ -58,6 +72,7 @@ pub enum ExecuteMsg {
     /// Set the owener
     UpdateConfig {
         owner: Option<String>,
+        token_contract: Option<String>,
     },
 
     // Update the exchange rate
@@ -111,7 +126,7 @@ pub enum ExecuteMsg {
     Receive(Cw20ReceiveMsg),
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug,PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     Config {},
@@ -131,13 +146,13 @@ pub enum QueryMsg {
     },
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq,JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Cw20HookMsg {
     Unbond {},
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug,PartialEq, JsonSchema)]
 pub struct UnbondHistory {
     pub batch_id: u64,
     pub time: u64,
@@ -147,7 +162,7 @@ pub struct UnbondHistory {
     pub released: bool,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct StateResponse {
     pub exchange_rate: Decimal,
     pub total_bond_amount: Uint128,
@@ -158,36 +173,34 @@ pub struct StateResponse {
     pub last_processed_batch: u64,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct ConfigResponse {
     pub owner: String,
-    pub reward_contract: Option<String>,
     pub token_contract: Option<String>,
-    pub airdrop_registry_contract: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq,JsonSchema)]
 pub struct WhitelistedValidatorsResponse {
     pub validators: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug,PartialEq, JsonSchema)]
 pub struct CurrentBatchResponse {
     pub id: u64,
     pub requested_with_fee: Uint128,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug,PartialEq, JsonSchema)]
 pub struct WithdrawableUnbondedResponse {
     pub withdrawable: Uint128,
 }
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug,PartialEq, JsonSchema)]
 pub struct UnbondRequestsResponse {
     pub address: String,
     pub requests: UnbondRequest,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug,PartialEq,JsonSchema)]
 pub struct AllHistoryResponse {
     pub history: Vec<UnbondHistory>,
 }

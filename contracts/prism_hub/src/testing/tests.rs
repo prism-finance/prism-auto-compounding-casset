@@ -32,22 +32,19 @@ use basset::hub::QueryMsg;
 use basset::hub::{
     AllHistoryResponse, ConfigResponse, CurrentBatchResponse, ExecuteMsg, InstantiateMsg,
     StateResponse, UnbondRequestsResponse, WhitelistedValidatorsResponse,
-    WithdrawableUnbondedResponse,
+    WithdrawableUnbondedResponse, Parameters
 };
 
 use basset::hub::Cw20HookMsg::Unbond;
 use basset::hub::ExecuteMsg::{CheckSlashing, Receive, UpdateConfig, UpdateParams};
 use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};
-use cw20_legacy::msg::ExecuteMsg::{Burn, Mint};
 
 use super::mock_querier::{mock_dependencies as dependencies, WasmMockQuerier};
 use crate::math::decimal_division;
-use crate::state::{read_unbond_wait_list, Parameters, CONFIG};
-use basset::airdrop::ExecuteMsg::{FabricateANCClaim, FabricateMIRClaim};
-use basset::airdrop::PairHandleMsg;
+use crate::state::{read_unbond_wait_list, CONFIG};
 use basset::hub::QueryMsg::{AllHistory, UnbondRequests, WithdrawableUnbonded};
-use std::borrow::BorrowMut;
 use cw20::Cw20ExecuteMsg::{Burn, Mint};
+use std::borrow::BorrowMut;
 
 const DEFAULT_VALIDATOR: &str = "default-validator";
 const DEFAULT_VALIDATOR2: &str = "default-validator2000";
@@ -81,7 +78,6 @@ fn set_validator_mock(querier: &mut WasmMockQuerier) {
 pub fn init<S: Storage, A: Api, Q: Querier>(
     deps: &mut OwnedDeps<S, A, Q>,
     owner: String,
-    reward_contract: String,
     token_contract: String,
     validator: String,
 ) {
@@ -98,12 +94,10 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
     let owner_info = mock_info(owner.as_str(), &[coin(1000000, "uluna")]);
     instantiate(deps.as_mut(), mock_env(), owner_info.clone(), msg).unwrap();
 
-    let register_msg = UpdateConfig {
-        owner: None,
-    };
+    let register_msg = UpdateConfig { owner: None, token_contract: Some(token_contract) };
 
     let res = execute(deps.as_mut(), mock_env(), owner_info, register_msg).unwrap();
-    assert_eq!(1, res.messages.len());
+    assert_eq!(0, res.messages.len());
 }
 
 pub fn do_register_validator(deps: DepsMut, validator: Validator) {
@@ -223,9 +217,7 @@ fn proper_initialization() {
         from_binary(&query(deps.as_ref(), mock_env(), conf).unwrap()).unwrap();
     let expected_conf = ConfigResponse {
         owner: "owner1".to_string(),
-        reward_contract: None,
         token_contract: None,
-        airdrop_registry_contract: None,
     };
 
     assert_eq!(expected_conf, query_conf);
@@ -255,12 +247,10 @@ fn proper_register_validator() {
 
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
-    let reward_contract = "reward".to_string();
 
     init(
         deps.borrow_mut(),
         owner,
-        reward_contract,
         token_contract,
         validator.address.clone(),
     );
@@ -335,12 +325,10 @@ fn proper_bond() {
 
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
-    let reward_contract = "reward".to_string();
 
     init(
         deps.borrow_mut(),
         owner,
-        reward_contract,
         token_contract,
         validator.address.clone(),
     );
@@ -488,12 +476,10 @@ fn proper_deregister() {
 
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
-    let reward_contract = "reward".to_string();
 
     init(
         &mut deps,
         owner.clone(),
-        reward_contract,
         token_contract,
         validator.address.clone(),
     );
@@ -562,12 +548,7 @@ fn proper_deregister() {
             funds: _,
         }) => {
             assert_eq!(contract_addr, MOCK_CONTRACT_ADDR);
-            assert_eq!(
-                msg,
-                &to_binary(&ExecuteMsg::UpdateGlobalIndex {
-                })
-                .unwrap()
-            )
+            assert_eq!(msg, &to_binary(&ExecuteMsg::UpdateGlobalIndex {}).unwrap())
         }
         _ => panic!("Unexpected message: {:?}", redelegate_msg),
     }
@@ -603,12 +584,10 @@ pub fn proper_update_global_index() {
 
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
-    let reward_contract = "reward".to_string();
 
     init(
         deps.borrow_mut(),
         owner,
-        reward_contract.clone(),
         token_contract,
         validator.address.clone(),
     );
@@ -617,12 +596,11 @@ pub fn proper_update_global_index() {
     do_register_validator(deps.as_mut(), validator.clone());
 
     // fails if there is no delegation
-    let reward_msg = ExecuteMsg::UpdateGlobalIndex {
-    };
+    let reward_msg = ExecuteMsg::UpdateGlobalIndex {};
 
     let info = mock_info(&addr1, &[]);
     let res = execute(deps.as_mut(), mock_env(), info, reward_msg).unwrap();
-    assert_eq!(res.messages.len(), 2);
+    assert_eq!(res.messages.len(), 1);
 
     // bond
     do_bond(deps.as_mut(), addr1.clone(), bond_amount, validator.clone());
@@ -639,12 +617,11 @@ pub fn proper_update_global_index() {
     deps.querier
         .with_token_balances(&[(&"token".to_string(), &[(&addr1, &bond_amount)])]);
 
-    let reward_msg = ExecuteMsg::UpdateGlobalIndex {
-    };
+    let reward_msg = ExecuteMsg::UpdateGlobalIndex {};
 
     let info = mock_info(&addr1, &[]);
     let res = execute(deps.as_mut(), mock_env(), info, reward_msg).unwrap();
-    assert_eq!(3, res.messages.len());
+    assert_eq!(2, res.messages.len());
 
     let last_index_query = QueryMsg::State {};
     let last_modification: StateResponse =
@@ -653,6 +630,7 @@ pub fn proper_update_global_index() {
         &last_modification.last_index_modification,
         &mock_env().block.time.seconds()
     );
+
 
     let withdraw = &res.messages[0].msg;
     match withdraw {
@@ -669,23 +647,9 @@ pub fn proper_update_global_index() {
             msg,
             funds: _,
         }) => {
-            assert_eq!(contract_addr, &reward_contract);
-            assert_eq!(msg, &to_binary(&SwapToRewardDenom {}).unwrap())
+            assert_eq!(contract_addr, MOCK_CONTRACT_ADDR);
         }
         _ => panic!("Unexpected message: {:?}", swap),
-    }
-
-    let update_g_index = &res.messages[2].msg;
-    match update_g_index {
-        CosmosMsg::Wasm(WasmMsg::Execute {
-            contract_addr,
-            msg,
-            funds: _,
-        }) => {
-            assert_eq!(contract_addr, &reward_contract);
-           // assert_eq!(msg, &to_binary(&UpdateGlobalIndex {}).unwrap())
-        }
-        _ => panic!("Unexpected message: {:?}", update_g_index),
     }
 }
 
@@ -702,12 +666,10 @@ pub fn proper_update_global_index_two_validators() {
 
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
-    let reward_contract = "reward".to_string();
 
     init(
         deps.borrow_mut(),
         owner,
-        reward_contract,
         token_contract,
         validator.address.clone(),
     );
@@ -751,12 +713,11 @@ pub fn proper_update_global_index_two_validators() {
     deps.querier
         .with_token_balances(&[(&"token".to_string(), &[(&addr1, &Uint128::new(20u128))])]);
 
-    let reward_msg = ExecuteMsg::UpdateGlobalIndex {
-    };
+    let reward_msg = ExecuteMsg::UpdateGlobalIndex {};
 
     let info = mock_info(&addr1, &[]);
     let res = execute(deps.as_mut(), mock_env(), info, reward_msg).unwrap();
-    assert_eq!(4, res.messages.len());
+    assert_eq!(3, res.messages.len());
 
     let withdraw = &res.messages[0].msg;
     match withdraw {
@@ -789,12 +750,10 @@ pub fn proper_update_global_index_respect_one_registered_validator() {
 
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
-    let reward_contract = "reward".to_string();
 
     init(
         deps.borrow_mut(),
         owner,
-        reward_contract,
         token_contract,
         validator.address.clone(),
     );
@@ -828,12 +787,11 @@ pub fn proper_update_global_index_respect_one_registered_validator() {
     deps.querier
         .with_token_balances(&[(&"token".to_string(), &[(&addr1, &Uint128::new(20u128))])]);
 
-    let reward_msg = ExecuteMsg::UpdateGlobalIndex {
-    };
+    let reward_msg = ExecuteMsg::UpdateGlobalIndex {};
 
     let info = mock_info(&addr1, &[]);
     let res = execute(deps.as_mut(), mock_env(), info, reward_msg).unwrap();
-    assert_eq!(3, res.messages.len());
+    assert_eq!(2, res.messages.len());
 
     let withdraw = &res.messages[0].msg;
     match withdraw {
@@ -860,11 +818,9 @@ pub fn proper_receive() {
 
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
-    let reward_contract = "reward".to_string();
     init(
         deps.borrow_mut(),
         owner,
-        reward_contract,
         token_contract.clone(),
         validator.address.clone(),
     );
@@ -952,11 +908,9 @@ pub fn proper_unbond() {
 
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
-    let reward_contract = "reward".to_string();
     init(
         deps.borrow_mut(),
         owner,
-        reward_contract,
         token_contract.clone(),
         validator.address.clone(),
     );
@@ -1169,12 +1123,10 @@ pub fn proper_pick_validator() {
 
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
-    let reward_contract = "reward".to_string();
 
     init(
         deps.borrow_mut(),
         owner,
-        reward_contract,
         token_contract.clone(),
         validator.address.clone(),
     );
@@ -1339,12 +1291,10 @@ pub fn proper_pick_validator_respect_distributed_delegation() {
 
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
-    let reward_contract = "reward".to_string();
 
     init(
         deps.borrow_mut(),
         owner,
-        reward_contract,
         token_contract.clone(),
         validator.address.clone(),
     );
@@ -1440,11 +1390,9 @@ pub fn proper_slashing() {
 
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
-    let reward_contract = "reward".to_string();
     init(
         &mut deps,
         owner,
-        reward_contract,
         token_contract.clone(),
         validator.address.clone(),
     );
@@ -1609,12 +1557,10 @@ pub fn proper_withdraw_unbonded() {
 
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
-    let reward_contract = "reward".to_string();
 
     init(
         &mut deps,
         owner,
-        reward_contract,
         token_contract,
         validator.address.clone(),
     );
@@ -1803,12 +1749,10 @@ pub fn proper_withdraw_unbonded_respect_slashing() {
 
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
-    let reward_contract = "reward".to_string();
 
     init(
         &mut deps,
         owner,
-        reward_contract,
         token_contract,
         validator.address.clone(),
     );
@@ -1960,13 +1904,11 @@ pub fn proper_withdraw_unbonded_respect_inactivity_slashing() {
 
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
-    let reward_contract = "reward".to_string();
 
     init(
         &mut deps,
         owner,
-        reward_contract,
-        token_contract,
+        token_contract.clone(),
         validator.address.clone(),
     );
 
@@ -2152,12 +2094,10 @@ pub fn proper_withdraw_unbond_with_dummies() {
 
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
-    let reward_contract = "reward".to_string();
 
     init(
         &mut deps,
         owner,
-        reward_contract,
         token_contract,
         validator.address.clone(),
     );
@@ -2321,12 +2261,10 @@ pub fn test_update_params() {
     };
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
-    let reward_contract = "reward".to_string();
 
     init(
         &mut deps,
         owner,
-        reward_contract,
         token_contract,
         validator.address,
     );
@@ -2391,7 +2329,6 @@ pub fn proper_recovery_fee() {
     };
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
-    let reward_contract = "reward".to_string();
 
     let bond_amount = Uint128::new(1000000u128);
     let unbond_amount = Uint128::new(100000u128);
@@ -2399,7 +2336,6 @@ pub fn proper_recovery_fee() {
     init(
         &mut deps,
         owner,
-        reward_contract,
         token_contract.clone(),
         validator.address.clone(),
     );
@@ -2615,13 +2551,10 @@ pub fn proper_update_config() {
     let new_owner = "new_owner".to_string();
     let invalid_owner = "invalid_owner".to_string();
     let token_contract = "token".to_string();
-    let reward_contract = "reward".to_string();
-    let airdrop_registry = "airdrop_registry".to_string();
 
     init(
         &mut deps,
         owner.clone(),
-        reward_contract.clone(),
         token_contract.clone(),
         validator.address,
     );
@@ -2630,21 +2563,14 @@ pub fn proper_update_config() {
     let config_query: ConfigResponse =
         from_binary(&query(deps.as_ref(), mock_env(), config).unwrap()).unwrap();
     assert_eq!(&config_query.token_contract.unwrap(), &token_contract);
-    assert_eq!(
-        &config_query.airdrop_registry_contract.unwrap(),
-        &airdrop_registry
-    );
 
     //make sure the other configs are still the same.
-    assert_eq!(&config_query.reward_contract.unwrap(), &reward_contract);
     assert_eq!(&config_query.owner, &owner);
 
     // only the owner can call this message
     let update_config = UpdateConfig {
         owner: Some(new_owner.clone()),
-        reward_contract: None,
         token_contract: None,
-        airdrop_registry_contract: None,
     };
     let info = mock_info(&invalid_owner, &[]);
     let res = execute(deps.as_mut(), mock_env(), info, update_config);
@@ -2653,9 +2579,7 @@ pub fn proper_update_config() {
     // change the owner
     let update_config = UpdateConfig {
         owner: Some(new_owner.clone()),
-        reward_contract: None,
         token_contract: None,
-        airdrop_registry_contract: None,
     };
     let info = mock_info(&owner, &[]);
     let res = execute(deps.as_mut(), mock_env(), info, update_config).unwrap();
@@ -2691,34 +2615,7 @@ pub fn proper_update_config() {
 
     let update_config = UpdateConfig {
         owner: None,
-        reward_contract: Some("new reward".to_string()),
-        token_contract: None,
-        airdrop_registry_contract: None,
-    };
-    let new_owner_info = mock_info(&new_owner, &[]);
-    let res = execute(deps.as_mut(), mock_env(), new_owner_info, update_config).unwrap();
-    assert_eq!(res.messages.len(), 1);
-
-    let msg: SubMsg = SubMsg::new(CosmosMsg::Distribution(
-        DistributionMsg::SetWithdrawAddress {
-            address: "new reward".to_string(),
-        },
-    ));
-    assert_eq!(msg, res.messages[0]);
-
-    let config = QueryMsg::Config {};
-    let config_query: ConfigResponse =
-        from_binary(&query(deps.as_ref(), mock_env(), config).unwrap()).unwrap();
-    assert_eq!(
-        config_query.reward_contract.unwrap(),
-        "new reward".to_string()
-    );
-
-    let update_config = UpdateConfig {
-        owner: None,
-        reward_contract: None,
         token_contract: Some("new token".to_string()),
-        airdrop_registry_contract: None,
     };
     let new_owner_info = mock_info(&new_owner, &[]);
     let res = execute(deps.as_mut(), mock_env(), new_owner_info, update_config).unwrap();
@@ -2732,173 +2629,9 @@ pub fn proper_update_config() {
         "new token".to_string()
     );
 
-    //make sure the other configs are still the same.
-    assert_eq!(
-        config_query.reward_contract.unwrap(),
-        "new reward".to_string()
-    );
     assert_eq!(config_query.owner, new_owner);
-
-    let update_config = UpdateConfig {
-        owner: None,
-        reward_contract: None,
-        token_contract: None,
-        airdrop_registry_contract: Some("new airdrop".to_string()),
-    };
-    let new_owner_info = mock_info(&new_owner, &[]);
-    let res = execute(deps.as_mut(), mock_env(), new_owner_info, update_config).unwrap();
-    assert_eq!(res.messages.len(), 0);
-
-    let config = QueryMsg::Config {};
-    let config_query: ConfigResponse =
-        from_binary(&query(deps.as_ref(), mock_env(), config).unwrap()).unwrap();
-    assert_eq!(
-        config_query.airdrop_registry_contract.unwrap(),
-        "new airdrop".to_string()
-    );
 }
 
-#[test]
-fn proper_claim_airdrop() {
-    let mut deps = dependencies(&[]);
-
-    let validator = sample_validator(DEFAULT_VALIDATOR.to_string());
-    set_validator_mock(&mut deps.querier);
-
-    let owner = "owner1".to_string();
-    let token_contract = "token".to_string();
-    let reward_contract = "reward".to_string();
-    let airdrop_registry = "airdrop_registry".to_string();
-
-    init(
-        &mut deps,
-        owner.clone(),
-        reward_contract,
-        token_contract,
-        validator.address,
-    );
-
-    let claim_msg = ExecuteMsg::ClaimAirdrop {
-        airdrop_token_contract: "airdrop_token".to_string(),
-        airdrop_contract: "MIR_contract".to_string(),
-        airdrop_swap_contract: "airdrop_swap".to_string(),
-        claim_msg: to_binary(&MIRMsg::MIRClaim {}).unwrap(),
-        swap_msg: Default::default(),
-    };
-
-    //invalid sender
-    let info = mock_info(&owner, &[]);
-    let res = execute(deps.as_mut(), mock_env(), info, claim_msg.clone()).unwrap_err();
-    assert_eq!(
-        res,
-        StdError::generic_err(format!("Sender must be {}", &airdrop_registry))
-    );
-
-    let valid_info = mock_info(&airdrop_registry, &[]);
-    let res = execute(deps.as_mut(), mock_env(), valid_info, claim_msg).unwrap();
-    assert_eq!(res.messages.len(), 2);
-
-    assert_eq!(
-        res.messages[0],
-        SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
-            contract_addr: "MIR_contract".to_string(),
-            msg: to_binary(&MIRMsg::MIRClaim {}).unwrap(),
-            funds: vec![]
-        }))
-    );
-    // assert_eq!(
-    //     res.messages[1],
-    //     SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
-    //         contract_addr: MOCK_CONTRACT_ADDR.to_string(),
-    //         msg: to_binary(&ExecuteMsg::SwapHook {
-    //             airdrop_token_contract: "airdrop_token".to_string(),
-    //             airdrop_swap_contract: "airdrop_swap".to_string(),
-    //             swap_msg: Default::default()
-    //         })
-    //         .unwrap(),
-    //         funds: vec![]
-    //     }))
-    // );
-}
-
-#[test]
-fn proper_update_global_index_with_airdrop() {
-    let mut deps = dependencies(&[]);
-
-    let validator = sample_validator(DEFAULT_VALIDATOR.to_string());
-    set_validator_mock(&mut deps.querier);
-
-    let addr1 = "addr1000".to_string();
-    let bond_amount = Uint128::new(10);
-
-    let owner = "owner1".to_string();
-    let token_contract = "token".to_string();
-    let reward_contract = "reward".to_string();
-
-    init(
-        &mut deps,
-        owner,
-        reward_contract,
-        token_contract,
-        validator.address.clone(),
-    );
-
-    // register_validator
-    do_register_validator(deps.as_mut(), validator.clone());
-
-    // bond
-    do_bond(deps.as_mut(), addr1.clone(), bond_amount, validator.clone());
-
-    //set delegation for query-all-delegation
-    let delegations: [FullDelegation; 1] =
-        [(sample_delegation(validator.address.clone(), coin(bond_amount.u128(), "uluna")))];
-
-    let validators: [Validator; 1] = [(validator)];
-
-    set_delegation_query(&mut deps.querier, &delegations, &validators);
-
-    //set bob's balance to 10 in token contract
-    deps.querier
-        .with_token_balances(&[(&"token".to_string(), &[(&addr1, &bond_amount)])]);
-
-    let binary_msg = to_binary(&FabricateMIRClaim {
-        stage: 0,
-        amount: Uint128::new(1000),
-        proof: vec!["proof".to_string()],
-    })
-    .unwrap();
-
-    let binary_msg2 = to_binary(&FabricateANCClaim {
-        stage: 0,
-        amount: Uint128::new(1000),
-        proof: vec!["proof".to_string()],
-    })
-    .unwrap();
-    let reward_msg = ExecuteMsg::UpdateGlobalIndex {
-    };
-
-    let info = mock_info(&addr1, &[]);
-    let res = execute(deps.as_mut(), mock_env(), info, reward_msg).unwrap();
-    assert_eq!(5, res.messages.len());
-
-    assert_eq!(
-        res.messages[0],
-        SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
-            contract_addr: "airdrop_registry".to_string(),
-            msg: binary_msg,
-            funds: vec![],
-        }))
-    );
-
-    assert_eq!(
-        res.messages[1],
-        SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
-            contract_addr: "airdrop_registry".to_string(),
-            msg: binary_msg2,
-            funds: vec![],
-        }))
-    );
-}
 
 fn set_delegation(querier: &mut WasmMockQuerier, validator: Validator, amount: u128, denom: &str) {
     querier.update_staking(

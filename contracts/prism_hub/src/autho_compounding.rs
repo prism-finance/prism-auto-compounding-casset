@@ -1,7 +1,7 @@
 use crate::math::decimal_summation_in_256;
 
-use crate::state::{Parameters, PARAMETERS, STATE};
-use basset::hub::State;
+use crate::state::{PARAMETERS, STATE};
+use basset::hub::{Parameters, State};
 use cosmwasm_std::{
     Coin, CosmosMsg, Decimal, DepsMut, Env, MessageInfo, Response, StakingMsg, StdError, StdResult,
 };

@@ -1,13 +1,8 @@
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-
-use cosmwasm_std::{
-    from_slice, to_vec, Addr, Decimal, Order, StdError, StdResult, Storage, Uint128,
-};
+use cosmwasm_std::{from_slice, to_vec, Addr, Order, StdError, StdResult, Storage, Uint128};
 use cosmwasm_storage::{Bucket, PrefixedStorage, ReadonlyBucket, ReadonlyPrefixedStorage};
 use cw_storage_plus::Item;
 
-use basset::hub::{Config, State, UnbondHistory, UnbondRequest};
+use basset::hub::{Config, CurrentBatch, Parameters, State, UnbondHistory, UnbondRequest};
 
 pub type LastBatch = u64;
 
@@ -15,24 +10,6 @@ pub static PREFIX_WAIT_MAP: &[u8] = b"wait";
 pub static PREFIX_AIRDROP_INFO: &[u8] = b"airedrop_info";
 pub static UNBOND_HISTORY_MAP: &[u8] = b"history_map";
 pub static VALIDATORS: &[u8] = b"validators";
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct Parameters {
-    pub epoch_period: u64,
-    pub underlying_coin_denom: String,
-    pub unbonding_period: u64,
-    pub principle_balance_before_update_global_index: Uint128,
-    pub peg_recovery_fee: Decimal,
-    pub er_threshold: Decimal,
-    pub reward_denom: String,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct CurrentBatch {
-    pub id: u64,
-    pub requested_with_fee: Uint128,
-}
-
 pub const CONFIG: Item<Config> = Item::new("\u{0}\u{6}config");
 pub const PARAMETERS: Item<Parameters> = Item::new("\u{0}\u{b}parameteres");
 pub const CURRENT_BATCH: Item<CurrentBatch> = Item::new("\u{0}\u{d}current_batch");
@@ -290,127 +267,3 @@ fn convert(start_after: Option<u64>) -> Option<Vec<u8>> {
     })
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    use cosmwasm_std::testing::mock_dependencies;
-    use cosmwasm_std::{Api, StdResult, Storage};
-    use cosmwasm_storage::{singleton, singleton_read};
-
-    pub static STATE_KEY: &[u8] = b"state";
-    pub static CURRENT_BATCH_KEY: &[u8] = b"current_batch";
-    pub static PARAMETERS_KEY: &[u8] = b"parameteres";
-    pub static CONFIG_KEY: &[u8] = b"config";
-
-    pub fn store_state(storage: &mut dyn Storage, params: &State) -> StdResult<()> {
-        singleton(storage, STATE_KEY).save(params)
-    }
-    pub fn read_state(storage: &dyn Storage) -> StdResult<State> {
-        singleton_read(storage, STATE_KEY).load()
-    }
-
-    pub fn store_legacy_config(storage: &mut dyn Storage, params: &Config) -> StdResult<()> {
-        singleton(storage, CONFIG_KEY).save(params)
-    }
-    pub fn read_legacy_config(storage: &dyn Storage) -> StdResult<Config> {
-        singleton_read(storage, CONFIG_KEY).load()
-    }
-
-    pub fn store_batch(storage: &mut dyn Storage, params: &CurrentBatch) -> StdResult<()> {
-        singleton(storage, CURRENT_BATCH_KEY).save(params)
-    }
-    pub fn read_batch(storage: &dyn Storage) -> StdResult<CurrentBatch> {
-        singleton_read(storage, CURRENT_BATCH_KEY).load()
-    }
-
-    pub fn store_params(storage: &mut dyn Storage, params: &Parameters) -> StdResult<()> {
-        singleton(storage, PARAMETERS_KEY).save(params)
-    }
-    pub fn read_params(storage: &dyn Storage) -> StdResult<Parameters> {
-        singleton_read(storage, PARAMETERS_KEY).load()
-    }
-
-    #[test]
-    fn state_legacy_compatibility() {
-        let mut deps = mock_dependencies(&[]);
-        store_state(
-            &mut deps.storage,
-            &State {
-                exchange_rate: Default::default(),
-                total_bond_amount: Default::default(),
-                last_index_modification: 0,
-                prev_hub_balance: Default::default(),
-                actual_unbonded_amount: Default::default(),
-                last_unbonded_time: 0,
-                last_processed_batch: 0,
-            },
-        )
-        .unwrap();
-
-        assert_eq!(
-            STATE.load(&deps.storage).unwrap(),
-            read_state(&deps.storage).unwrap()
-        );
-    }
-
-    #[test]
-    fn legacy_compatibility() {
-        let mut deps = mock_dependencies(&[]);
-        store_batch(
-            &mut deps.storage,
-            &CurrentBatch {
-                id: 0,
-                requested_with_fee: Default::default(),
-            },
-        )
-        .unwrap();
-
-        assert_eq!(
-            CURRENT_BATCH.load(&deps.storage).unwrap(),
-            read_batch(&deps.storage).unwrap()
-        );
-    }
-
-    #[test]
-    fn config_legacy_compatibility() {
-        let mut deps = mock_dependencies(&[]);
-        store_legacy_config(
-            &mut deps.storage,
-            &Config {
-                creator: deps.api.addr_canonicalize("dasd").unwrap(),
-                reward_contract: None,
-                token_contract: None,
-                airdrop_registry_contract: None,
-            },
-        )
-        .unwrap();
-
-        assert_eq!(
-            CONFIG.load(&deps.storage).unwrap(),
-            read_legacy_config(&deps.storage).unwrap()
-        );
-    }
-
-    #[test]
-    fn params_legacy_compatibility() {
-        let mut deps = mock_dependencies(&[]);
-        store_params(
-            &mut deps.storage,
-            &Parameters {
-                epoch_period: 10,
-                underlying_coin_denom: "uluna".to_string(),
-                unbonding_period: 1000,
-                peg_recovery_fee: Default::default(),
-                er_threshold: Default::default(),
-                reward_denom: "uusd".to_string(),
-            },
-        )
-        .unwrap();
-
-        assert_eq!(
-            PARAMETERS.load(&deps.storage).unwrap(),
-            read_params(&deps.storage).unwrap()
-        );
-    }
-}

@@ -13,15 +13,15 @@ use crate::config::{
 
 use crate::state::{
     all_unbond_history, get_unbond_requests, query_get_finished_amount, read_valid_validators,
-    CurrentBatch, Parameters, CONFIG, CURRENT_BATCH, PARAMETERS, STATE,
+    CONFIG, CURRENT_BATCH, PARAMETERS, STATE,
 };
 use crate::unbond::{execute_unbond, execute_withdraw_unbonded};
 
 use crate::autho_compounding::execute_update_exchange_rate;
 use crate::bond::execute_bond;
 use basset::hub::{
-    AllHistoryResponse, Config, ConfigResponse, CurrentBatchResponse, Cw20HookMsg, ExecuteMsg,
-    InstantiateMsg, QueryMsg, State, StateResponse, UnbondRequestsResponse,
+    AllHistoryResponse, Config, ConfigResponse, CurrentBatch, CurrentBatchResponse, Cw20HookMsg,
+    ExecuteMsg, InstantiateMsg, Parameters, QueryMsg, State, StateResponse, UnbondRequestsResponse,
     WhitelistedValidatorsResponse, WithdrawableUnbondedResponse,
 };
 use cw20::{Cw20QueryMsg, Cw20ReceiveMsg, TokenInfoResponse};
@@ -47,9 +47,7 @@ pub fn instantiate(
     // store config
     let data = Config {
         creator: deps.api.addr_canonicalize(info.sender.as_str())?,
-        reward_contract: None,
-        token_contract: None,
-        airdrop_registry_contract: None,
+        token_contract: None
     };
     CONFIG.save(deps.storage, &data)?;
 
@@ -71,7 +69,6 @@ pub fn instantiate(
         epoch_period: msg.epoch_period,
         underlying_coin_denom: msg.underlying_coin_denom,
         unbonding_period: msg.unbonding_period,
-        principle_balance_before_update_global_index: Default::default(),
         peg_recovery_fee: msg.peg_recovery_fee,
         er_threshold: msg.er_threshold,
         reward_denom: msg.reward_denom,
@@ -140,14 +137,7 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
             peg_recovery_fee,
             er_threshold,
         ),
-        ExecuteMsg::UpdateConfig {
-            owner,
-        } => execute_update_config(
-            deps,
-            env,
-            info,
-            owner,
-        ),
+        ExecuteMsg::UpdateConfig { owner,token_contract } => execute_update_config(deps, env, info, owner, token_contract),
     }
 }
 
@@ -304,17 +294,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
 
 fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
     let config = CONFIG.load(deps.storage)?;
-    let mut reward: Option<String> = None;
     let mut token: Option<String> = None;
-    let mut airdrop: Option<String> = None;
-    if config.reward_contract.is_some() {
-        reward = Some(
-            deps.api
-                .addr_humanize(&config.reward_contract.unwrap())
-                .unwrap()
-                .to_string(),
-        );
-    }
     if config.token_contract.is_some() {
         token = Some(
             deps.api
@@ -323,20 +303,10 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
                 .to_string(),
         );
     }
-    if config.airdrop_registry_contract.is_some() {
-        airdrop = Some(
-            deps.api
-                .addr_humanize(&config.airdrop_registry_contract.unwrap())
-                .unwrap()
-                .to_string(),
-        );
-    }
 
     Ok(ConfigResponse {
         owner: deps.api.addr_humanize(&config.creator)?.to_string(),
-        reward_contract: reward,
         token_contract: token,
-        airdrop_registry_contract: airdrop,
     })
 }
 
