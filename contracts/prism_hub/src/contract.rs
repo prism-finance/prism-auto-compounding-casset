@@ -47,7 +47,8 @@ pub fn instantiate(
     // store config
     let data = Config {
         creator: deps.api.addr_canonicalize(info.sender.as_str())?,
-        token_contract: None
+        token_contract: None,
+        porotcol_fee_collector: None,
     };
     CONFIG.save(deps.storage, &data)?;
 
@@ -71,7 +72,7 @@ pub fn instantiate(
         unbonding_period: msg.unbonding_period,
         peg_recovery_fee: msg.peg_recovery_fee,
         er_threshold: msg.er_threshold,
-        reward_denom: msg.reward_denom,
+        protocol_fee: msg.protocol_fee,
     };
 
     PARAMETERS.save(deps.storage, &params)?;
@@ -128,6 +129,7 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
             unbonding_period,
             peg_recovery_fee,
             er_threshold,
+            protocol_fee,
         } => execute_update_params(
             deps,
             env,
@@ -136,8 +138,20 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
             unbonding_period,
             peg_recovery_fee,
             er_threshold,
+            protocol_fee,
         ),
-        ExecuteMsg::UpdateConfig { owner,token_contract } => execute_update_config(deps, env, info, owner, token_contract),
+        ExecuteMsg::UpdateConfig {
+            owner,
+            token_contract,
+            protocol_fee_collector,
+        } => execute_update_config(
+            deps,
+            env,
+            info,
+            owner,
+            token_contract,
+            protocol_fee_collector,
+        ),
     }
 }
 
@@ -294,19 +308,33 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
 
 fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
     let config = CONFIG.load(deps.storage)?;
-    let mut token: Option<String> = None;
-    if config.token_contract.is_some() {
-        token = Some(
+
+    let token: Option<String> = if config.token_contract.is_some() {
+        Some(
             deps.api
                 .addr_humanize(&config.token_contract.unwrap())
                 .unwrap()
                 .to_string(),
-        );
-    }
+        )
+    } else {
+        None
+    };
+
+    let fee_collector: Option<String> = if config.porotcol_fee_collector.is_some() {
+        Some(
+            deps.api
+                .addr_humanize(&config.porotcol_fee_collector.unwrap())
+                .unwrap()
+                .to_string(),
+        )
+    } else {
+        None
+    };
 
     Ok(ConfigResponse {
         owner: deps.api.addr_humanize(&config.creator)?.to_string(),
         token_contract: token,
+        protocol_fee_collector: fee_collector,
     })
 }
 

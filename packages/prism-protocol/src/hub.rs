@@ -5,28 +5,28 @@ use serde::{Deserialize, Serialize};
 
 pub type UnbondRequest = Vec<(u64, Uint128)>;
 
-#[derive(Serialize, Deserialize, Clone, Debug,PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct InstantiateMsg {
     pub epoch_period: u64,
     pub underlying_coin_denom: String,
     pub unbonding_period: u64,
     pub peg_recovery_fee: Decimal,
     pub er_threshold: Decimal,
-    pub reward_denom: String,
     pub validator: String,
+    pub protocol_fee: Decimal,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq,JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct Parameters {
     pub epoch_period: u64,
     pub underlying_coin_denom: String,
     pub unbonding_period: u64,
     pub peg_recovery_fee: Decimal,
     pub er_threshold: Decimal,
-    pub reward_denom: String,
+    pub protocol_fee: Decimal,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug,PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct CurrentBatch {
     pub id: u64,
     pub requested_with_fee: Uint128,
@@ -49,6 +49,7 @@ pub struct State {
 pub struct Config {
     pub creator: CanonicalAddr,
     pub token_contract: Option<CanonicalAddr>,
+    pub porotcol_fee_collector: Option<CanonicalAddr>,
 }
 
 impl State {
@@ -73,6 +74,7 @@ pub enum ExecuteMsg {
     UpdateConfig {
         owner: Option<String>,
         token_contract: Option<String>,
+        protocol_fee_collector: Option<String>,
     },
 
     // Update the exchange rate
@@ -94,6 +96,7 @@ pub enum ExecuteMsg {
         unbonding_period: Option<u64>,
         peg_recovery_fee: Option<Decimal>,
         er_threshold: Option<Decimal>,
+        protocol_fee: Option<Decimal>,
     },
 
     ////////////////////
@@ -126,7 +129,7 @@ pub enum ExecuteMsg {
     Receive(Cw20ReceiveMsg),
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug,PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     Config {},
@@ -146,13 +149,13 @@ pub enum QueryMsg {
     },
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq,JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Cw20HookMsg {
     Unbond {},
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug,PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct UnbondHistory {
     pub batch_id: u64,
     pub time: u64,
@@ -162,7 +165,7 @@ pub struct UnbondHistory {
     pub released: bool,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct StateResponse {
     pub exchange_rate: Decimal,
     pub total_bond_amount: Uint128,
@@ -173,34 +176,35 @@ pub struct StateResponse {
     pub last_processed_batch: u64,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct ConfigResponse {
     pub owner: String,
     pub token_contract: Option<String>,
+    pub protocol_fee_collector: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq,JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct WhitelistedValidatorsResponse {
     pub validators: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug,PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct CurrentBatchResponse {
     pub id: u64,
     pub requested_with_fee: Uint128,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug,PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct WithdrawableUnbondedResponse {
     pub withdrawable: Uint128,
 }
-#[derive(Serialize, Deserialize, Clone, Debug,PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct UnbondRequestsResponse {
     pub address: String,
     pub requests: UnbondRequest,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug,PartialEq,JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct AllHistoryResponse {
     pub history: Vec<UnbondHistory>,
 }

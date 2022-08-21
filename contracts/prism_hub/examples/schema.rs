@@ -4,8 +4,8 @@ use std::fs::create_dir_all;
 use cosmwasm_schema::{export_schema, remove_schemas, schema_for};
 
 use basset::hub::{
-    AllHistoryResponse, CurrentBatchResponse, InstantiateMsg, QueryMsg, StateResponse,
-    UnbondRequestsResponse, WhitelistedValidatorsResponse, WithdrawableUnbondedResponse, Parameters
+    AllHistoryResponse, CurrentBatchResponse, InstantiateMsg, Parameters, QueryMsg, StateResponse,
+    UnbondRequestsResponse, WhitelistedValidatorsResponse, WithdrawableUnbondedResponse,
 };
 use basset::hub::{Config, ExecuteMsg, State};
 

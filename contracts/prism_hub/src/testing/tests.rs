@@ -31,8 +31,8 @@ use crate::unbond::execute_unbond;
 use basset::hub::QueryMsg;
 use basset::hub::{
     AllHistoryResponse, ConfigResponse, CurrentBatchResponse, ExecuteMsg, InstantiateMsg,
-    StateResponse, UnbondRequestsResponse, WhitelistedValidatorsResponse,
-    WithdrawableUnbondedResponse, Parameters
+    Parameters, StateResponse, UnbondRequestsResponse, WhitelistedValidatorsResponse,
+    WithdrawableUnbondedResponse,
 };
 
 use basset::hub::Cw20HookMsg::Unbond;
@@ -87,14 +87,18 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
         unbonding_period: 2,
         peg_recovery_fee: Decimal::zero(),
         er_threshold: Decimal::one(),
-        reward_denom: "uusd".to_string(),
         validator,
+        protocol_fee: Default::default(),
     };
 
     let owner_info = mock_info(owner.as_str(), &[coin(1000000, "uluna")]);
     instantiate(deps.as_mut(), mock_env(), owner_info.clone(), msg).unwrap();
 
-    let register_msg = UpdateConfig { owner: None, token_contract: Some(token_contract) };
+    let register_msg = UpdateConfig {
+        owner: None,
+        token_contract: Some(token_contract),
+        protocol_fee_collector: None,
+    };
 
     let res = execute(deps.as_mut(), mock_env(), owner_info, register_msg).unwrap();
     assert_eq!(0, res.messages.len());
@@ -156,8 +160,8 @@ fn proper_initialization() {
         unbonding_period: 210,
         peg_recovery_fee: Decimal::zero(),
         er_threshold: Decimal::one(),
-        reward_denom: "uusd".to_string(),
         validator: validator.address.clone(),
+        protocol_fee: Default::default(),
     };
 
     let _owner = "owner1";
@@ -194,7 +198,6 @@ fn proper_initialization() {
     assert_eq!(query_params.unbonding_period, 210);
     assert_eq!(query_params.peg_recovery_fee, Decimal::zero());
     assert_eq!(query_params.er_threshold, Decimal::one());
-    assert_eq!(query_params.reward_denom, "uusd");
 
     // state storage must be initialized
     let state = QueryMsg::State {};
@@ -218,6 +221,7 @@ fn proper_initialization() {
     let expected_conf = ConfigResponse {
         owner: "owner1".to_string(),
         token_contract: None,
+        protocol_fee_collector: None,
     };
 
     assert_eq!(expected_conf, query_conf);
@@ -369,7 +373,7 @@ fn proper_bond() {
     let delegate = &res.messages[0].msg;
     match delegate {
         CosmosMsg::Staking(StakingMsg::Delegate { validator, amount }) => {
-            assert_eq!(validator.as_str(), DEFAULT_VALIDATOR.to_string());
+            assert_eq!(String::as_str(validator), DEFAULT_VALIDATOR.to_string());
             assert_eq!(amount, &coin(bond_amount.u128(), "uluna"));
         }
         _ => panic!("Unexpected message: {:?}", delegate),
@@ -601,6 +605,14 @@ pub fn proper_update_global_index() {
     let info = mock_info(&addr1, &[]);
     let res = execute(deps.as_mut(), mock_env(), info, reward_msg).unwrap();
     assert_eq!(res.messages.len(), 1);
+    assert_eq!(
+        res.messages[0],
+        SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: MOCK_CONTRACT_ADDR.to_string(),
+            msg: to_binary(&ExecuteMsg::UpdateExchangeRate {}).unwrap(),
+            funds: vec![],
+        }))
+    );
 
     // bond
     do_bond(deps.as_mut(), addr1.clone(), bond_amount, validator.clone());
@@ -631,7 +643,6 @@ pub fn proper_update_global_index() {
         &mock_env().block.time.seconds()
     );
 
-
     let withdraw = &res.messages[0].msg;
     match withdraw {
         CosmosMsg::Distribution(DistributionMsg::WithdrawDelegatorReward { validator: val }) => {
@@ -644,7 +655,7 @@ pub fn proper_update_global_index() {
     match swap {
         CosmosMsg::Wasm(WasmMsg::Execute {
             contract_addr,
-            msg,
+            msg: _,
             funds: _,
         }) => {
             assert_eq!(contract_addr, MOCK_CONTRACT_ADDR);
@@ -653,6 +664,138 @@ pub fn proper_update_global_index() {
     }
 }
 
+/// Covers update echange rate when there is one validator.
+/// Checks if more than one Withdraw message is sent.
+#[test]
+pub fn proper_update_exchange_rate() {
+    let mut deps = dependencies(&[]);
+    let validator = sample_validator(DEFAULT_VALIDATOR.to_string());
+    set_validator_mock(&mut deps.querier);
+
+    let addr1 = "addr1000".to_string();
+    let bond_amount = Uint128::new(10);
+
+    let owner = "owner1".to_string();
+    let token_contract = "token".to_string();
+
+    init(
+        deps.borrow_mut(),
+        owner,
+        token_contract,
+        validator.address.clone(),
+    );
+
+    deps.querier.with_token_balances(&[(
+        &"token".to_string(),
+        &[(&MOCK_CONTRACT_ADDR.to_string(), &INITIAL_DEPOSIT_AMOUNT)],
+    )]);
+
+    // register_validator
+    do_register_validator(deps.as_mut(), validator.clone());
+
+    // bond
+    do_bond(deps.as_mut(), addr1.clone(), bond_amount, validator.clone());
+
+    //set delegation for query-all-delegation
+    let delegations: [FullDelegation; 1] =
+        [(sample_delegation(validator.address.clone(), coin(bond_amount.u128(), "uluna")))];
+
+    let validators: [Validator; 1] = [(validator.clone())];
+
+    set_delegation_query(&mut deps.querier, &delegations, &validators);
+
+    // fails if there is no delegation
+    let reward_msg = ExecuteMsg::UpdateGlobalIndex {};
+
+    let info = mock_info(&addr1, &[]);
+
+    // set balance before executing the exchange rate update
+    let new_balance = Uint128::new(900);
+    deps.querier.with_native_balances(&[(
+        MOCK_CONTRACT_ADDR.to_string(),
+        Coin {
+            denom: "uluna".to_string(),
+            amount: new_balance,
+        },
+    )]);
+
+    let res = execute(deps.as_mut(), mock_env(), info, reward_msg).unwrap();
+    assert_eq!(res.messages.len(), 2);
+    assert_eq!(
+        res.messages[1],
+        SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: MOCK_CONTRACT_ADDR.to_string(),
+            msg: to_binary(&ExecuteMsg::UpdateExchangeRate {}).unwrap(),
+            funds: vec![],
+        }))
+    );
+
+    let update_exchange_rate = ExecuteMsg::UpdateExchangeRate {};
+
+    let info = mock_info(&addr1, &[]);
+    let res = execute(deps.as_mut(), mock_env(), info, update_exchange_rate).unwrap_err();
+
+    assert_eq!(res, StdError::generic_err("Unauthorized"));
+
+    let update_exchange_rate = ExecuteMsg::UpdateExchangeRate {};
+
+    let info = mock_info(MOCK_CONTRACT_ADDR, &[]);
+    let res = execute(deps.as_mut(), mock_env(), info, update_exchange_rate).unwrap();
+
+    assert_eq!(res.messages.len(), 1);
+
+    assert_eq!(
+        res.messages[0],
+        SubMsg::new(CosmosMsg::Staking(StakingMsg::Delegate {
+            validator: validator.address.clone(),
+            amount: Coin::new(900, "uluna"),
+        }))
+    );
+
+    // fails if there is no delegation
+    let reward_msg = ExecuteMsg::UpdateGlobalIndex {};
+
+    let info = mock_info(&addr1, &[]);
+
+    // set balance before executing the exchange rate update
+    deps.querier.with_native_balances(&[(
+        MOCK_CONTRACT_ADDR.to_string(),
+        Coin {
+            denom: "uluna".to_string(),
+            amount: Uint128::new(1000),
+        },
+    )]);
+
+    let res = execute(deps.as_mut(), mock_env(), info, reward_msg).unwrap();
+    assert_eq!(res.messages.len(), 2);
+    assert_eq!(
+        res.messages[1],
+        SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr: MOCK_CONTRACT_ADDR.to_string(),
+            msg: to_binary(&ExecuteMsg::UpdateExchangeRate {}).unwrap(),
+            funds: vec![],
+        }))
+    );
+
+    let update_exchange_rate = ExecuteMsg::UpdateExchangeRate {};
+
+    let info = mock_info(MOCK_CONTRACT_ADDR, &[]);
+    let res = execute(deps.as_mut(), mock_env(), info, update_exchange_rate).unwrap();
+
+    assert_eq!(res.messages.len(), 1);
+
+    assert_eq!(
+        res.messages[0],
+        SubMsg::new(CosmosMsg::Staking(StakingMsg::Delegate {
+            validator: validator.address,
+            amount: Coin::new(100, "uluna"),
+        }))
+    );
+
+    let state = QueryMsg::State {};
+    let _query_state: StateResponse =
+        from_binary(&query(deps.as_ref(), mock_env(), state).unwrap()).unwrap();
+}
 /// Covers update_global_index when there is more than one validator.
 /// Checks if more than one Withdraw message is sent.
 #[test]
@@ -1558,12 +1701,7 @@ pub fn proper_withdraw_unbonded() {
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
 
-    init(
-        &mut deps,
-        owner,
-        token_contract,
-        validator.address.clone(),
-    );
+    init(&mut deps, owner, token_contract, validator.address.clone());
 
     // register_validator
     do_register_validator(deps.as_mut(), validator.clone());
@@ -1750,12 +1888,7 @@ pub fn proper_withdraw_unbonded_respect_slashing() {
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
 
-    init(
-        &mut deps,
-        owner,
-        token_contract,
-        validator.address.clone(),
-    );
+    init(&mut deps, owner, token_contract, validator.address.clone());
 
     // register_validator
     do_register_validator(deps.as_mut(), validator.clone());
@@ -1905,12 +2038,7 @@ pub fn proper_withdraw_unbonded_respect_inactivity_slashing() {
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
 
-    init(
-        &mut deps,
-        owner,
-        token_contract.clone(),
-        validator.address.clone(),
-    );
+    init(&mut deps, owner, token_contract, validator.address.clone());
 
     // register_validator
     do_register_validator(deps.as_mut(), validator.clone());
@@ -2095,12 +2223,7 @@ pub fn proper_withdraw_unbond_with_dummies() {
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
 
-    init(
-        &mut deps,
-        owner,
-        token_contract,
-        validator.address.clone(),
-    );
+    init(&mut deps, owner, token_contract, validator.address.clone());
 
     // register_validator
     do_register_validator(deps.as_mut(), validator.clone());
@@ -2258,16 +2381,12 @@ pub fn test_update_params() {
         unbonding_period: None,
         peg_recovery_fee: None,
         er_threshold: None,
+        protocol_fee: None,
     };
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
 
-    init(
-        &mut deps,
-        owner,
-        token_contract,
-        validator.address,
-    );
+    init(&mut deps, owner, token_contract, validator.address);
 
     let invalid_info = mock_info("invalid", &[]);
     let res = execute(
@@ -2288,7 +2407,6 @@ pub fn test_update_params() {
     assert_eq!(params.unbonding_period, 2);
     assert_eq!(params.peg_recovery_fee, Decimal::zero());
     assert_eq!(params.er_threshold, Decimal::one());
-    assert_eq!(params.reward_denom, "uusd");
 
     //test with some swap_denom.
     let update_prams = UpdateParams {
@@ -2296,6 +2414,7 @@ pub fn test_update_params() {
         unbonding_period: Some(3),
         peg_recovery_fee: Some(Decimal::one()),
         er_threshold: Some(Decimal::zero()),
+        protocol_fee: None,
     };
 
     //the result must be 1
@@ -2310,7 +2429,6 @@ pub fn test_update_params() {
     assert_eq!(params.unbonding_period, 3);
     assert_eq!(params.peg_recovery_fee, Decimal::one());
     assert_eq!(params.er_threshold, Decimal::zero());
-    assert_eq!(params.reward_denom, "uusd");
 }
 
 /// Covers if peg recovery is applied (in "bond", "unbond",
@@ -2326,6 +2444,7 @@ pub fn proper_recovery_fee() {
         unbonding_period: None,
         peg_recovery_fee: Some(Decimal::from_ratio(Uint128::new(1), Uint128::new(1000))),
         er_threshold: Some(Decimal::from_ratio(Uint128::new(99), Uint128::new(100))),
+        protocol_fee: None,
     };
     let owner = "owner1".to_string();
     let token_contract = "token".to_string();
@@ -2551,6 +2670,7 @@ pub fn proper_update_config() {
     let new_owner = "new_owner".to_string();
     let invalid_owner = "invalid_owner".to_string();
     let token_contract = "token".to_string();
+    let protocol_fee_collector = "fee_collector".to_string();
 
     init(
         &mut deps,
@@ -2571,6 +2691,7 @@ pub fn proper_update_config() {
     let update_config = UpdateConfig {
         owner: Some(new_owner.clone()),
         token_contract: None,
+        protocol_fee_collector: None,
     };
     let info = mock_info(&invalid_owner, &[]);
     let res = execute(deps.as_mut(), mock_env(), info, update_config);
@@ -2580,6 +2701,7 @@ pub fn proper_update_config() {
     let update_config = UpdateConfig {
         owner: Some(new_owner.clone()),
         token_contract: None,
+        protocol_fee_collector: None,
     };
     let info = mock_info(&owner, &[]);
     let res = execute(deps.as_mut(), mock_env(), info, update_config).unwrap();
@@ -2595,6 +2717,7 @@ pub fn proper_update_config() {
         unbonding_period: None,
         peg_recovery_fee: None,
         er_threshold: None,
+        protocol_fee: None,
     };
 
     let new_owner_info = mock_info(&new_owner, &[]);
@@ -2607,6 +2730,7 @@ pub fn proper_update_config() {
         unbonding_period: None,
         peg_recovery_fee: None,
         er_threshold: None,
+        protocol_fee: None,
     };
 
     let new_owner_info = mock_info(&owner, &[]);
@@ -2616,6 +2740,7 @@ pub fn proper_update_config() {
     let update_config = UpdateConfig {
         owner: None,
         token_contract: Some("new token".to_string()),
+        protocol_fee_collector: None,
     };
     let new_owner_info = mock_info(&new_owner, &[]);
     let res = execute(deps.as_mut(), mock_env(), new_owner_info, update_config).unwrap();
@@ -2630,8 +2755,163 @@ pub fn proper_update_config() {
     );
 
     assert_eq!(config_query.owner, new_owner);
+
+    let update_config = UpdateConfig {
+        owner: None,
+        token_contract: None,
+        protocol_fee_collector: Some(protocol_fee_collector),
+    };
+    let new_owner_info = mock_info(&new_owner, &[]);
+    let res = execute(deps.as_mut(), mock_env(), new_owner_info, update_config).unwrap();
+    assert_eq!(res.messages.len(), 0);
+
+    let config = QueryMsg::Config {};
+    let config_query: ConfigResponse =
+        from_binary(&query(deps.as_ref(), mock_env(), config).unwrap()).unwrap();
+    assert_eq!(
+        config_query.protocol_fee_collector.unwrap(),
+        "fee_collector".to_string()
+    );
+
+    assert_eq!(config_query.owner, new_owner);
 }
 
+#[test]
+pub fn proper_protocol_fee() {
+    let mut deps = dependencies(&[]);
+    let validator = sample_validator(DEFAULT_VALIDATOR.to_string());
+    set_validator_mock(&mut deps.querier);
+
+    let update_prams = UpdateParams {
+        epoch_period: None,
+        unbonding_period: None,
+        peg_recovery_fee: Some(Decimal::from_ratio(Uint128::new(1), Uint128::new(1000))),
+        er_threshold: Some(Decimal::from_ratio(Uint128::new(99), Uint128::new(100))),
+        protocol_fee: Some(Decimal::from_ratio(Uint128::new(1), Uint128::new(100))),
+    };
+    let owner = "owner1".to_string();
+    let token_contract = "token".to_string();
+    let protocol_fee_collector = "fee_collector".to_string();
+
+    let bond_amount = Uint128::new(1000000u128);
+
+    init(
+        &mut deps,
+        owner.clone(),
+        token_contract.clone(),
+        validator.address.clone(),
+    );
+
+    let creator_info = mock_info("owner1", &[]);
+    let res = execute(deps.as_mut(), mock_env(), creator_info, update_prams).unwrap();
+    assert_eq!(res.messages.len(), 0);
+
+    let get_params = QueryMsg::Parameters {};
+    let parmas: Parameters =
+        from_binary(&query(deps.as_ref(), mock_env(), get_params).unwrap()).unwrap();
+    assert_eq!(parmas.epoch_period, 30);
+    assert_eq!(parmas.underlying_coin_denom, "uluna");
+    assert_eq!(parmas.unbonding_period, 2);
+    assert_eq!(parmas.peg_recovery_fee.to_string(), "0.001");
+    assert_eq!(parmas.er_threshold.to_string(), "0.99");
+    assert_eq!(parmas.protocol_fee.to_string(), "0.01");
+
+    // register_validator
+    do_register_validator(deps.as_mut(), validator.clone());
+
+    let bob = "bob".to_string();
+    let bond_msg = ExecuteMsg::Bond {
+        validator: validator.address.clone(),
+    };
+
+    //this will set the balance of the user in token contract
+    deps.querier
+        .with_token_balances(&[(&"token".to_string(), &[(&bob, &bond_amount)])]);
+
+    let info = mock_info(&bob, &[coin(bond_amount.u128(), "uluna")]);
+
+    let res = execute(deps.as_mut(), mock_env(), info.clone(), bond_msg).unwrap();
+    assert_eq!(2, res.messages.len());
+
+    // set balance before executing the exchange rate update
+    let new_balance = Uint128::new(900);
+    deps.querier.with_native_balances(&[(
+        MOCK_CONTRACT_ADDR.to_string(),
+        Coin {
+            denom: "uluna".to_string(),
+            amount: new_balance,
+        },
+    )]);
+
+    set_delegation(
+        &mut deps.querier,
+        validator.clone(),
+        bond_amount.u128(),
+        "uluna",
+    );
+
+    let reward_msg = ExecuteMsg::UpdateGlobalIndex {};
+
+    let info = mock_info(&owner, &[]);
+    let res = execute(deps.as_mut(), mock_env(), info, reward_msg).unwrap();
+    assert_eq!(2, res.messages.len());
+
+    let last_index_query = QueryMsg::State {};
+    let last_modification: StateResponse =
+        from_binary(&query(deps.as_ref(), mock_env(), last_index_query).unwrap()).unwrap();
+    assert_eq!(
+        &last_modification.last_index_modification,
+        &mock_env().block.time.seconds()
+    );
+
+    let withdraw = &res.messages[0].msg;
+    match withdraw {
+        CosmosMsg::Distribution(DistributionMsg::WithdrawDelegatorReward { validator: val }) => {
+            assert_eq!(val, &validator.address);
+        }
+        _ => panic!("Unexpected message: {:?}", withdraw),
+    }
+
+    let swap = &res.messages[1].msg;
+    match swap {
+        CosmosMsg::Wasm(WasmMsg::Execute {
+            contract_addr,
+            msg: _,
+            funds: _,
+        }) => {
+            assert_eq!(contract_addr, MOCK_CONTRACT_ADDR);
+        }
+        _ => panic!("Unexpected message: {:?}", swap),
+    }
+
+    let update_exchange_rate = ExecuteMsg::UpdateExchangeRate {};
+
+    // need to set the protocol fee collector address
+    let register_msg = UpdateConfig {
+        owner: None,
+        token_contract: None,
+        protocol_fee_collector: Some(protocol_fee_collector.clone()),
+    };
+
+    let owner_info = mock_info("owner1", &[]);
+    let res = execute(deps.as_mut(), mock_env(), owner_info, register_msg).unwrap();
+    assert_eq!(0, res.messages.len());
+
+    let query_msg = QueryMsg::Config {};
+
+    let config: ConfigResponse =
+        from_binary(&query(deps.as_ref(), mock_env(), query_msg).unwrap()).unwrap();
+
+    assert_eq!(
+        config.protocol_fee_collector.unwrap(),
+        protocol_fee_collector
+    );
+
+    let info = mock_info(MOCK_CONTRACT_ADDR, &[]);
+    let res = execute(deps.as_mut(), mock_env(), info, update_exchange_rate).unwrap();
+
+    assert_eq!(res.messages.len(), 2);
+}
 
 fn set_delegation(querier: &mut WasmMockQuerier, validator: Validator, amount: u128, denom: &str) {
     querier.update_staking(
@@ -2662,7 +2942,7 @@ fn sample_delegation(addr: String, amount: Coin) -> FullDelegation {
 }
 
 // sample MIR claim msg
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MIRMsg {
     MIRClaim {},

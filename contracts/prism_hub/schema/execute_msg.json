@@ -12,19 +12,13 @@
         "update_config": {
           "type": "object",
           "properties": {
-            "airdrop_registry_contract": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
             "owner": {
               "type": [
                 "string",
                 "null"
               ]
             },
-            "reward_contract": {
+            "protocol_fee_collector": {
               "type": [
                 "string",
                 "null"
@@ -37,6 +31,18 @@
               ]
             }
           }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "update_exchange_rate"
+      ],
+      "properties": {
+        "update_exchange_rate": {
+          "type": "object"
         }
       },
       "additionalProperties": false
@@ -120,6 +126,16 @@
                 }
               ]
             },
+            "protocol_fee": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Decimal"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "unbonding_period": {
               "type": [
                 "integer",
@@ -162,18 +178,7 @@
       ],
       "properties": {
         "update_global_index": {
-          "type": "object",
-          "properties": {
-            "airdrop_hooks": {
-              "type": [
-                "array",
-                "null"
-              ],
-              "items": {
-                "$ref": "#/definitions/Binary"
-              }
-            }
-          }
+          "type": "object"
         }
       },
       "additionalProperties": false
@@ -213,72 +218,6 @@
       "properties": {
         "receive": {
           "$ref": "#/definitions/Cw20ReceiveMsg"
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "description": "internal operations",
-      "type": "object",
-      "required": [
-        "claim_airdrop"
-      ],
-      "properties": {
-        "claim_airdrop": {
-          "type": "object",
-          "required": [
-            "airdrop_contract",
-            "airdrop_swap_contract",
-            "airdrop_token_contract",
-            "claim_msg",
-            "swap_msg"
-          ],
-          "properties": {
-            "airdrop_contract": {
-              "type": "string"
-            },
-            "airdrop_swap_contract": {
-              "type": "string"
-            },
-            "airdrop_token_contract": {
-              "type": "string"
-            },
-            "claim_msg": {
-              "$ref": "#/definitions/Binary"
-            },
-            "swap_msg": {
-              "$ref": "#/definitions/Binary"
-            }
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    {
-      "description": "Swaps claimed airdrop tokens to UST through Terraswap & sends resulting UST to bLuna Reward contract",
-      "type": "object",
-      "required": [
-        "swap_hook"
-      ],
-      "properties": {
-        "swap_hook": {
-          "type": "object",
-          "required": [
-            "airdrop_swap_contract",
-            "airdrop_token_contract",
-            "swap_msg"
-          ],
-          "properties": {
-            "airdrop_swap_contract": {
-              "type": "string"
-            },
-            "airdrop_token_contract": {
-              "type": "string"
-            },
-            "swap_msg": {
-              "$ref": "#/definitions/Binary"
-            }
-          }
         }
       },
       "additionalProperties": false

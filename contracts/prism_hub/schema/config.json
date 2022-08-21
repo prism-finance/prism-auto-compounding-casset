@@ -6,20 +6,10 @@
     "creator"
   ],
   "properties": {
-    "airdrop_registry_contract": {
-      "anyOf": [
-        {
-          "$ref": "#/definitions/CanonicalAddr"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
     "creator": {
       "$ref": "#/definitions/CanonicalAddr"
     },
-    "reward_contract": {
+    "protcol_fee_collector": {
       "anyOf": [
         {
           "$ref": "#/definitions/CanonicalAddr"

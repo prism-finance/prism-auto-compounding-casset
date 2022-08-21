@@ -1,6 +1,10 @@
 use basset::hub::Config;
 use cosmwasm_std::testing::{MockApi, MockQuerier, MockStorage};
-use cosmwasm_std::{from_binary, from_slice, to_binary, AllBalanceResponse, Api, BalanceResponse, BankQuery, CanonicalAddr, Coin, ContractResult, Decimal, FullDelegation, OwnedDeps, Querier, QuerierResult, QueryRequest, SystemError, SystemResult, Uint128, Validator, WasmQuery, Addr, Empty};
+use cosmwasm_std::{
+    from_binary, from_slice, to_binary, Addr, AllBalanceResponse, Api, BalanceResponse, BankQuery,
+    CanonicalAddr, Coin, ContractResult, Empty, FullDelegation, OwnedDeps, Querier, QuerierResult,
+    QueryRequest, SystemError, SystemResult, Uint128, Validator, WasmQuery,
+};
 use cosmwasm_storage::to_length_prefixed;
 use std::collections::HashMap;
 
@@ -20,22 +24,7 @@ pub fn mock_dependencies(
         storage: MockStorage::default(),
         api: MockApi::default(),
         querier: custom_querier,
-        custom_query_type: Default::default()
-    }
-}
-
-#[derive(Clone, Default)]
-pub struct TaxQuerier {
-    rate: Decimal,
-    caps: HashMap<String, Uint128>,
-}
-
-impl TaxQuerier {
-    pub fn _new(rate: Decimal, caps: &[(&String, &Uint128)]) -> Self {
-        TaxQuerier {
-            rate,
-            caps: _caps_to_map(caps),
-        }
+        custom_query_type: Default::default(),
     }
 }
 
@@ -69,6 +58,7 @@ impl Querier for WasmMockQuerier {
     }
 }
 
+#[allow(clippy::if_same_then_else)]
 impl WasmMockQuerier {
     pub fn handle_query(&self, request: &QueryRequest<Empty>) -> QuerierResult {
         match &request {
@@ -81,6 +71,7 @@ impl WasmMockQuerier {
                     let config = Config {
                         creator: api.addr_canonicalize("owner1").unwrap(),
                         token_contract: Some(api.addr_canonicalize("token").unwrap()),
+                        porotcol_fee_collector: None,
                     };
                     SystemResult::Ok(ContractResult::from(to_binary(
                         &to_binary(&config).unwrap(),
@@ -135,8 +126,7 @@ impl WasmMockQuerier {
                     coins.push(luna);
                     let all_balances = AllBalanceResponse { amount: coins };
                     SystemResult::Ok(ContractResult::from(to_binary(&all_balances)))
-                }
-                else if address == MOCK_CONTRACT_ADDR {
+                } else if address == MOCK_CONTRACT_ADDR {
                     let mut coins: Vec<Coin> = vec![];
                     let luna = Coin {
                         denom: "uluna".to_string(),
@@ -198,7 +188,7 @@ impl WasmMockQuerier {
                         for balance in balances {
                             total_supply += *balance.1;
                         }
-                        let api: MockApi = MockApi::default();
+                        let _api: MockApi = MockApi::default();
                         let token_inf: TokenInfo = TokenInfo {
                             name: "bluna".to_string(),
                             symbol: "BLUNA".to_string(),
@@ -328,5 +318,4 @@ impl WasmMockQuerier {
     pub fn with_token_balances(&mut self, balances: &[(&String, &[(&String, &Uint128)])]) {
         self.token_querier = TokenQuerier::new(balances);
     }
-
 }

@@ -38,16 +38,15 @@ pub(crate) fn execute_unbond(
 
     // Collect all the requests within a epoch period
     // Apply peg recovery fee
-    let amount_with_fee: Uint128;
-    if state.exchange_rate < threshold {
+    let amount_with_fee: Uint128 = if state.exchange_rate < threshold {
         let max_peg_fee = amount * recovery_fee;
         let required_peg_fee = ((total_supply + current_batch.requested_with_fee)
             .checked_sub(state.total_bond_amount))?;
         let peg_fee = Uint128::min(max_peg_fee, required_peg_fee);
-        amount_with_fee = (amount.checked_sub(peg_fee))?;
+        (amount.checked_sub(peg_fee))?
     } else {
-        amount_with_fee = amount;
-    }
+        amount
+    };
     current_batch.requested_with_fee += amount_with_fee;
 
     store_unbond_wait_list(

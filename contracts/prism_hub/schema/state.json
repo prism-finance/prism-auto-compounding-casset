@@ -9,6 +9,8 @@
     "last_processed_batch",
     "last_unbonded_time",
     "prev_hub_balance",
+    "principle_balance_before_exchange_update",
+    "second_exchange_rate",
     "total_bond_amount"
   ],
   "properties": {
@@ -35,6 +37,12 @@
     },
     "prev_hub_balance": {
       "$ref": "#/definitions/Uint128"
+    },
+    "principle_balance_before_exchange_update": {
+      "$ref": "#/definitions/Uint128"
+    },
+    "second_exchange_rate": {
+      "$ref": "#/definitions/Decimal"
     },
     "total_bond_amount": {
       "$ref": "#/definitions/Uint128"

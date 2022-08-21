@@ -20,6 +20,7 @@ pub fn execute_update_params(
     unbonding_period: Option<u64>,
     peg_recovery_fee: Option<Decimal>,
     er_threshold: Option<Decimal>,
+    protocol_fee: Option<Decimal>,
 ) -> StdResult<Response> {
     // only owner can send this message.
     let config = CONFIG.load(deps.storage)?;
@@ -36,7 +37,7 @@ pub fn execute_update_params(
         unbonding_period: unbonding_period.unwrap_or(params.unbonding_period),
         peg_recovery_fee: peg_recovery_fee.unwrap_or(params.peg_recovery_fee),
         er_threshold: er_threshold.unwrap_or(params.er_threshold),
-        reward_denom: params.reward_denom,
+        protocol_fee: protocol_fee.unwrap_or(params.protocol_fee),
     };
 
     PARAMETERS.save(deps.storage, &new_params)?;
@@ -52,6 +53,7 @@ pub fn execute_update_config(
     info: MessageInfo,
     owner: Option<String>,
     token_contract: Option<String>,
+    protocol_fee_collector: Option<String>,
 ) -> StdResult<Response> {
     // only owner must be able to send this message.
     let conf = CONFIG.load(deps.storage)?;
@@ -74,6 +76,15 @@ pub fn execute_update_config(
 
         CONFIG.update(deps.storage, |mut last_config| -> StdResult<Config> {
             last_config.token_contract = Some(token_raw);
+            Ok(last_config)
+        })?;
+    }
+
+    if let Some(collector) = protocol_fee_collector {
+        let collector = deps.api.addr_canonicalize(collector.as_str())?;
+
+        CONFIG.update(deps.storage, |mut last_config| -> StdResult<Config> {
+            last_config.porotcol_fee_collector = Some(collector);
             Ok(last_config)
         })?;
     }

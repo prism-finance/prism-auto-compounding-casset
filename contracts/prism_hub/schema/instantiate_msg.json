@@ -6,7 +6,7 @@
     "epoch_period",
     "er_threshold",
     "peg_recovery_fee",
-    "reward_denom",
+    "protocol_fee",
     "unbonding_period",
     "underlying_coin_denom",
     "validator"
@@ -23,8 +23,8 @@
     "peg_recovery_fee": {
       "$ref": "#/definitions/Decimal"
     },
-    "reward_denom": {
-      "type": "string"
+    "protocol_fee": {
+      "$ref": "#/definitions/Decimal"
     },
     "unbonding_period": {
       "type": "integer",
