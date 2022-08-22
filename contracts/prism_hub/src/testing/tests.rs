@@ -2798,7 +2798,7 @@ pub fn proper_protocol_fee() {
     init(
         &mut deps,
         owner.clone(),
-        token_contract.clone(),
+        token_contract,
         validator.address.clone(),
     );
 
@@ -2830,7 +2830,7 @@ pub fn proper_protocol_fee() {
 
     let info = mock_info(&bob, &[coin(bond_amount.u128(), "uluna")]);
 
-    let res = execute(deps.as_mut(), mock_env(), info.clone(), bond_msg).unwrap();
+    let res = execute(deps.as_mut(), mock_env(), info, bond_msg).unwrap();
     assert_eq!(2, res.messages.len());
 
     // set balance before executing the exchange rate update
