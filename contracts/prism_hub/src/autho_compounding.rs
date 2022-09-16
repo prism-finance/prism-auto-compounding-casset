@@ -84,7 +84,7 @@ pub fn execute_update_exchange_rate(
                 .unwrap()
                 .validator
                 .to_string(),
-            amount: Coin::new(claimed_rewards.u128(), "uluna"),
+            amount: Coin::new(user_rewards.u128(), "uluna"),
         }),
     );
 

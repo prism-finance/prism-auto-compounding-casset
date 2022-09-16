@@ -2911,6 +2911,14 @@ pub fn proper_protocol_fee() {
     let res = execute(deps.as_mut(), mock_env(), info, update_exchange_rate).unwrap();
 
     assert_eq!(res.messages.len(), 2);
+
+    assert_eq!(
+        res.messages[0],
+        SubMsg::new(CosmosMsg::Bank(BankMsg::Send {
+            to_address: "fee_collector".to_string(),
+            amount: vec![Coin::new(9u128, "uluna")],
+        })),
+    );
 }
 
 fn set_delegation(querier: &mut WasmMockQuerier, validator: Validator, amount: u128, denom: &str) {
