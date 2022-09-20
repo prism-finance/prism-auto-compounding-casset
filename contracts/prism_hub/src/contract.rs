@@ -53,7 +53,7 @@ pub fn instantiate(
     // store config
     let data = Config {
         token_contract: None,
-        porotcol_fee_collector: None,
+        protocol_fee_collector: None,
     };
     CONFIG.save(deps.storage, &data)?;
 
@@ -331,10 +331,10 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
         None
     };
 
-    let fee_collector: Option<String> = if config.porotcol_fee_collector.is_some() {
+    let fee_collector: Option<String> = if config.protocol_fee_collector.is_some() {
         Some(
             deps.api
-                .addr_humanize(&config.porotcol_fee_collector.unwrap())
+                .addr_humanize(&config.protocol_fee_collector.unwrap())
                 .unwrap()
                 .to_string(),
         )

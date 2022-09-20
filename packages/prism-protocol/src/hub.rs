@@ -48,7 +48,7 @@ pub struct State {
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct Config {
     pub token_contract: Option<CanonicalAddr>,
-    pub porotcol_fee_collector: Option<CanonicalAddr>,
+    pub protocol_fee_collector: Option<CanonicalAddr>,
 }
 
 impl State {

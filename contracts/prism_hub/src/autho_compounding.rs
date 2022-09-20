@@ -61,7 +61,7 @@ pub fn execute_update_exchange_rate(
     let mut messages: Vec<CosmosMsg> = vec![];
 
     if protocol_fee as Uint128 != Uint128::zero() {
-        match config.porotcol_fee_collector {
+        match config.protocol_fee_collector {
             Some(fee_collector) => {
                 messages.push(CosmosMsg::Bank(BankMsg::Send {
                     to_address: deps.api.addr_humanize(&fee_collector)?.to_string(),

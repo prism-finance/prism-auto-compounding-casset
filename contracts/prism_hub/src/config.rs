@@ -66,7 +66,7 @@ pub fn execute_update_config(
         let collector = deps.api.addr_canonicalize(collector.as_str())?;
 
         CONFIG.update(deps.storage, |mut last_config| -> StdResult<Config> {
-            last_config.porotcol_fee_collector = Some(collector);
+            last_config.protocol_fee_collector = Some(collector);
             Ok(last_config)
         })?;
     }
