@@ -75,15 +75,20 @@ pub fn execute_update_config(
 }
 
 /// Register a white listed validator.
-/// Only creator/owner is allowed to execute
+/// Only creator/owner and the contract are allowed to execute
 pub fn execute_register_validator(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     validator: String,
 ) -> StdResult<Response> {
-    unwrap_assert_admin(deps.as_ref(), ADMIN, &info.sender)?;
+    let admin = ADMIN.get(deps.as_ref())?.unwrap();
 
+    let sender_raw = deps.api.addr_canonicalize(info.sender.as_str())?;
+    let contract_raw = deps.api.addr_canonicalize(env.contract.address.as_str())?;
+    if info.sender != admin && contract_raw != sender_raw {
+        return Err(StdError::generic_err("Caller is not admin"));
+    }
     // given validator must be first a validator in the system.
     let exists = deps
         .querier
