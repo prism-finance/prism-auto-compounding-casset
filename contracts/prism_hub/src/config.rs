@@ -1,5 +1,5 @@
 use crate::state::{
-    read_validators, remove_white_validators, store_white_validators, CONFIG, PARAMETERS,
+    read_validators, remove_white_validators, store_white_validators, ADMIN, CONFIG, PARAMETERS,
 };
 use basset::hub::{Config, ExecuteMsg, Parameters};
 use cosmwasm_std::{
@@ -7,6 +7,7 @@ use cosmwasm_std::{
     StdError, StdResult, WasmMsg,
 };
 
+use crate::utility::unwrap_assert_admin;
 use rand::{Rng, SeedableRng, XorShiftRng};
 
 /// Update general parameters
@@ -22,12 +23,8 @@ pub fn execute_update_params(
     er_threshold: Option<Decimal>,
     protocol_fee: Option<Decimal>,
 ) -> StdResult<Response> {
-    // only owner can send this message.
-    let config = CONFIG.load(deps.storage)?;
-    let sender_raw = deps.api.addr_canonicalize(info.sender.as_str())?;
-    if sender_raw != config.creator {
-        return Err(StdError::generic_err("unauthorized"));
-    }
+    // only owner can send this message
+    unwrap_assert_admin(deps.as_ref(), ADMIN, &info.sender)?;
 
     let params: Parameters = PARAMETERS.load(deps.storage)?;
 
@@ -51,25 +48,10 @@ pub fn execute_update_config(
     deps: DepsMut,
     _env: Env,
     info: MessageInfo,
-    owner: Option<String>,
     token_contract: Option<String>,
     protocol_fee_collector: Option<String>,
 ) -> StdResult<Response> {
-    // only owner must be able to send this message.
-    let conf = CONFIG.load(deps.storage)?;
-    let sender_raw = deps.api.addr_canonicalize(info.sender.as_str())?;
-    if sender_raw != conf.creator {
-        return Err(StdError::generic_err("unauthorized"));
-    }
-
-    if let Some(o) = owner {
-        let owner_raw = deps.api.addr_canonicalize(o.as_str())?;
-
-        CONFIG.update(deps.storage, |mut last_config| -> StdResult<Config> {
-            last_config.creator = owner_raw;
-            Ok(last_config)
-        })?;
-    }
+    unwrap_assert_admin(deps.as_ref(), ADMIN, &info.sender)?;
 
     if let Some(token) = token_contract {
         let token_raw = deps.api.addr_canonicalize(token.as_str())?;
@@ -96,17 +78,11 @@ pub fn execute_update_config(
 /// Only creator/owner is allowed to execute
 pub fn execute_register_validator(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     validator: String,
 ) -> StdResult<Response> {
-    let hub_conf = CONFIG.load(deps.storage)?;
-
-    let sender_raw = deps.api.addr_canonicalize(info.sender.as_str())?;
-    let contract_raw = deps.api.addr_canonicalize(env.contract.address.as_str())?;
-    if hub_conf.creator != sender_raw && contract_raw != sender_raw {
-        return Err(StdError::generic_err("unauthorized"));
-    }
+    unwrap_assert_admin(deps.as_ref(), ADMIN, &info.sender)?;
 
     // given validator must be first a validator in the system.
     let exists = deps
@@ -136,12 +112,8 @@ pub fn execute_deregister_validator(
     info: MessageInfo,
     validator: String,
 ) -> StdResult<Response> {
-    let token = CONFIG.load(deps.storage)?;
+    unwrap_assert_admin(deps.as_ref(), ADMIN, &info.sender)?;
 
-    let sender_raw = deps.api.addr_canonicalize(info.sender.as_str())?;
-    if token.creator != sender_raw {
-        return Err(StdError::generic_err("unauthorized"));
-    }
     let validators_before_remove = read_validators(deps.storage)?;
 
     if validators_before_remove.len() == 1 {

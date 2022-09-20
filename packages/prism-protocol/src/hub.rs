@@ -47,7 +47,6 @@ pub struct State {
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct Config {
-    pub creator: CanonicalAddr,
     pub token_contract: Option<CanonicalAddr>,
     pub porotcol_fee_collector: Option<CanonicalAddr>,
 }
@@ -72,9 +71,13 @@ pub enum ExecuteMsg {
 
     /// Set the owener
     UpdateConfig {
-        owner: Option<String>,
         token_contract: Option<String>,
         protocol_fee_collector: Option<String>,
+    },
+
+    /// Change the admin (must be called by current admin)
+    UpdateAdmin {
+        admin: String,
     },
 
     // Update the exchange rate
@@ -147,6 +150,7 @@ pub enum QueryMsg {
         start_from: Option<u64>,
         limit: Option<u32>,
     },
+    Admin {},
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
@@ -178,7 +182,6 @@ pub struct StateResponse {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct ConfigResponse {
-    pub owner: String,
     pub token_contract: Option<String>,
     pub protocol_fee_collector: Option<String>,
 }

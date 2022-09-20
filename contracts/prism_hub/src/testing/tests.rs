@@ -36,14 +36,15 @@ use basset::hub::{
 };
 
 use basset::hub::Cw20HookMsg::Unbond;
-use basset::hub::ExecuteMsg::{CheckSlashing, Receive, UpdateConfig, UpdateParams};
+use basset::hub::ExecuteMsg::{CheckSlashing, Receive, UpdateAdmin, UpdateConfig, UpdateParams};
 use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};
 
 use super::mock_querier::{mock_dependencies as dependencies, WasmMockQuerier};
 use crate::math::decimal_division;
-use crate::state::{read_unbond_wait_list, CONFIG};
-use basset::hub::QueryMsg::{AllHistory, UnbondRequests, WithdrawableUnbonded};
+use crate::state::{read_unbond_wait_list, ADMIN};
+use basset::hub::QueryMsg::{Admin, AllHistory, UnbondRequests, WithdrawableUnbonded};
 use cw20::Cw20ExecuteMsg::{Burn, Mint};
+use cw_controllers::AdminResponse;
 use std::borrow::BorrowMut;
 
 const DEFAULT_VALIDATOR: &str = "default-validator";
@@ -95,7 +96,6 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
     instantiate(deps.as_mut(), mock_env(), owner_info.clone(), msg).unwrap();
 
     let register_msg = UpdateConfig {
-        owner: None,
         token_contract: Some(token_contract),
         protocol_fee_collector: None,
     };
@@ -219,12 +219,17 @@ fn proper_initialization() {
     let query_conf: ConfigResponse =
         from_binary(&query(deps.as_ref(), mock_env(), conf).unwrap()).unwrap();
     let expected_conf = ConfigResponse {
-        owner: "owner1".to_string(),
         token_contract: None,
         protocol_fee_collector: None,
     };
 
     assert_eq!(expected_conf, query_conf);
+
+    let admin = Admin {};
+    let query_admin: AdminResponse =
+        from_binary(&query(deps.as_ref(), mock_env(), admin).unwrap()).unwrap();
+
+    assert_eq!(query_admin.admin.unwrap(), "owner1".to_string());
 
     // current branch storage must be initialized
     let current_batch = QueryMsg::CurrentBatch {};
@@ -268,7 +273,10 @@ fn proper_register_validator() {
 
     // invalid requests
     let res = execute(deps.as_mut(), mock_env(), owner_info, msg);
-    assert_eq!(res.unwrap_err(), StdError::generic_err("unauthorized"));
+    assert_eq!(
+        res.unwrap_err(),
+        StdError::generic_err("Caller is not admin")
+    );
 
     //invalid validator
 
@@ -520,7 +528,10 @@ fn proper_deregister() {
 
     let invalid_info = mock_info("invalid", &[]);
     let res = execute(deps.as_mut(), mock_env(), invalid_info, msg);
-    assert_eq!(res.unwrap_err(), StdError::generic_err("unauthorized"));
+    assert_eq!(
+        res.unwrap_err(),
+        StdError::generic_err("Caller is not admin")
+    );
 
     let msg = ExecuteMsg::DeregisterValidator {
         validator: validator.address.clone(),
@@ -2395,7 +2406,10 @@ pub fn test_update_params() {
         invalid_info,
         update_prams.clone(),
     );
-    assert_eq!(res.unwrap_err(), StdError::generic_err("unauthorized"));
+    assert_eq!(
+        res.unwrap_err(),
+        StdError::generic_err("Caller is not admin")
+    );
     let creator_info = mock_info("owner1", &[]);
     let res = execute(deps.as_mut(), mock_env(), creator_info, update_prams).unwrap();
     assert_eq!(res.messages.len(), 0);
@@ -2672,44 +2686,39 @@ pub fn proper_update_config() {
     let token_contract = "token".to_string();
     let protocol_fee_collector = "fee_collector".to_string();
 
-    init(
-        &mut deps,
-        owner.clone(),
-        token_contract.clone(),
-        validator.address,
-    );
+    init(&mut deps, owner.clone(), token_contract, validator.address);
 
-    let config = QueryMsg::Config {};
-    let config_query: ConfigResponse =
-        from_binary(&query(deps.as_ref(), mock_env(), config).unwrap()).unwrap();
-    assert_eq!(&config_query.token_contract.unwrap(), &token_contract);
-
+    let admin = Admin {};
+    let query_admin: AdminResponse =
+        from_binary(&query(deps.as_ref(), mock_env(), admin).unwrap()).unwrap();
     //make sure the other configs are still the same.
-    assert_eq!(&config_query.owner, &owner);
+    assert_eq!(query_admin.admin.unwrap(), owner);
 
     // only the owner can call this message
-    let update_config = UpdateConfig {
-        owner: Some(new_owner.clone()),
-        token_contract: None,
-        protocol_fee_collector: None,
+    let update_admin = UpdateAdmin {
+        admin: new_owner.clone(),
     };
+
     let info = mock_info(&invalid_owner, &[]);
-    let res = execute(deps.as_mut(), mock_env(), info, update_config);
-    assert_eq!(res.unwrap_err(), StdError::generic_err("unauthorized"));
+    let res = execute(deps.as_mut(), mock_env(), info, update_admin);
+    assert_eq!(
+        res.unwrap_err(),
+        StdError::generic_err("Caller is not admin")
+    );
 
     // change the owner
-    let update_config = UpdateConfig {
-        owner: Some(new_owner.clone()),
-        token_contract: None,
-        protocol_fee_collector: None,
+    let update_admin = UpdateAdmin {
+        admin: new_owner.clone(),
     };
+
     let info = mock_info(&owner, &[]);
-    let res = execute(deps.as_mut(), mock_env(), info, update_config).unwrap();
+    let res = execute(deps.as_mut(), mock_env(), info, update_admin).unwrap();
     assert_eq!(res.messages.len(), 0);
 
-    let config = CONFIG.load(&deps.storage).unwrap();
-    let new_owner_raw = deps.api.addr_canonicalize(&new_owner).unwrap();
-    assert_eq!(new_owner_raw, config.creator);
+    // let config = CONFIG.load(&deps.storage).unwrap();
+    let new_owner_raw = new_owner.clone();
+    let admin = ADMIN.get(deps.as_ref()).unwrap().unwrap();
+    assert_eq!(new_owner_raw, admin);
 
     // new owner can send the owner related messages
     let update_prams = UpdateParams {
@@ -2735,10 +2744,12 @@ pub fn proper_update_config() {
 
     let new_owner_info = mock_info(&owner, &[]);
     let res = execute(deps.as_mut(), mock_env(), new_owner_info, update_prams);
-    assert_eq!(res.unwrap_err(), StdError::generic_err("unauthorized"));
+    assert_eq!(
+        res.unwrap_err(),
+        StdError::generic_err("Caller is not admin")
+    );
 
     let update_config = UpdateConfig {
-        owner: None,
         token_contract: Some("new token".to_string()),
         protocol_fee_collector: None,
     };
@@ -2754,10 +2765,13 @@ pub fn proper_update_config() {
         "new token".to_string()
     );
 
-    assert_eq!(config_query.owner, new_owner);
+    let admin = Admin {};
+    let query_admin: AdminResponse =
+        from_binary(&query(deps.as_ref(), mock_env(), admin).unwrap()).unwrap();
+    //make sure the other configs are still the same.
+    assert_eq!(query_admin.admin.unwrap(), new_owner);
 
     let update_config = UpdateConfig {
-        owner: None,
         token_contract: None,
         protocol_fee_collector: Some(protocol_fee_collector),
     };
@@ -2773,7 +2787,11 @@ pub fn proper_update_config() {
         "fee_collector".to_string()
     );
 
-    assert_eq!(config_query.owner, new_owner);
+    let admin = Admin {};
+    let query_admin: AdminResponse =
+        from_binary(&query(deps.as_ref(), mock_env(), admin).unwrap()).unwrap();
+    //make sure the other configs are still the same.
+    assert_eq!(query_admin.admin.unwrap(), new_owner);
 }
 
 #[test]
@@ -2888,7 +2906,6 @@ pub fn proper_protocol_fee() {
 
     // need to set the protocol fee collector address
     let register_msg = UpdateConfig {
-        owner: None,
         token_contract: None,
         protocol_fee_collector: Some(protocol_fee_collector.clone()),
     };

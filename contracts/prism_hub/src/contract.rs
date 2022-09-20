@@ -13,7 +13,7 @@ use crate::config::{
 
 use crate::state::{
     all_unbond_history, get_unbond_requests, query_get_finished_amount, read_valid_validators,
-    CONFIG, CURRENT_BATCH, PARAMETERS, STATE,
+    ADMIN, CONFIG, CURRENT_BATCH, PARAMETERS, STATE,
 };
 use crate::unbond::{execute_unbond, execute_withdraw_unbonded};
 
@@ -25,10 +25,11 @@ use basset::hub::{
     WhitelistedValidatorsResponse, WithdrawableUnbondedResponse,
 };
 use cw20::{Cw20QueryMsg, Cw20ReceiveMsg, TokenInfoResponse};
+use cw_controllers::AdminError;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
-    deps: DepsMut,
+    mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
@@ -44,9 +45,12 @@ pub fn instantiate(
             StdError::generic_err(format!("No {} assets are provided to bond", "uluna"))
         })?;
 
+    //set the admin
+    let admin = deps.api.addr_validate(info.sender.as_str())?;
+    ADMIN.set(deps.branch(), Some(admin))?;
+
     // store config
     let data = Config {
-        creator: deps.api.addr_canonicalize(info.sender.as_str())?,
         token_contract: None,
         porotcol_fee_collector: None,
     };
@@ -141,17 +145,19 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
             protocol_fee,
         ),
         ExecuteMsg::UpdateConfig {
-            owner,
             token_contract,
             protocol_fee_collector,
-        } => execute_update_config(
-            deps,
-            env,
-            info,
-            owner,
-            token_contract,
-            protocol_fee_collector,
-        ),
+        } => execute_update_config(deps, env, info, token_contract, protocol_fee_collector),
+        ExecuteMsg::UpdateAdmin { admin } => {
+            let admin = deps.api.addr_validate(&admin)?;
+            match ADMIN.execute_update_admin(deps, info, Some(admin)) {
+                Ok(r) => Ok(r),
+                Err(e) => match e {
+                    AdminError::NotAdmin {} => Err(StdError::generic_err("Caller is not admin")),
+                    AdminError::Std(std_error) => Err(std_error),
+                },
+            }
+        }
     }
 }
 
@@ -303,6 +309,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::AllHistory { start_from, limit } => {
             to_binary(&query_unbond_requests_limitation(deps, start_from, limit)?)
         }
+        QueryMsg::Admin {} => to_binary(&ADMIN.query_admin(deps)?),
     }
 }
 
@@ -332,7 +339,6 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
     };
 
     Ok(ConfigResponse {
-        owner: deps.api.addr_humanize(&config.creator)?.to_string(),
         token_contract: token,
         protocol_fee_collector: fee_collector,
     })
