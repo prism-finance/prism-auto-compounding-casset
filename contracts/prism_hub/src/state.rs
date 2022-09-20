@@ -199,19 +199,19 @@ pub fn is_valid_validator(storage: &dyn Storage, validator_address: String) -> S
     }
 }
 
-/// Read whitelisted validators
-pub fn read_valid_validators(storage: &dyn Storage) -> StdResult<Vec<String>> {
-    let res = ReadonlyPrefixedStorage::new(storage, VALIDATORS);
-    let validators: Vec<String> = res
-        .range(None, None, Order::Ascending)
-        .map(|item| {
-            let (key, _) = item;
-            let sender: String = from_slice(&key).unwrap();
-            sender
-        })
-        .collect();
-    Ok(validators)
-}
+// /// Read whitelisted validators
+// pub fn read_valid_validators(storage: &dyn Storage) -> StdResult<Vec<String>> {
+//     let res = ReadonlyPrefixedStorage::new(storage, VALIDATORS);
+//     let validators: Vec<String> = res
+//         .range(None, None, Order::Ascending)
+//         .map(|item| {
+//             let (key, _) = item;
+//             let sender: String = from_slice(&key).unwrap();
+//             sender
+//         })
+//         .collect();
+//     Ok(validators)
+// }
 
 /// Store unbond history map
 /// Hashmap<batch_id, <UnbondHistory>>

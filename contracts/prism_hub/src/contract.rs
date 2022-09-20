@@ -12,8 +12,8 @@ use crate::config::{
 };
 
 use crate::state::{
-    all_unbond_history, get_unbond_requests, query_get_finished_amount, read_valid_validators,
-    ADMIN, CONFIG, CURRENT_BATCH, PARAMETERS, STATE,
+    all_unbond_history, get_unbond_requests, query_get_finished_amount, read_validators, ADMIN,
+    CONFIG, CURRENT_BATCH, PARAMETERS, STATE,
 };
 use crate::unbond::{execute_unbond, execute_withdraw_unbonded};
 
@@ -363,7 +363,7 @@ fn query_state(deps: Deps) -> StdResult<StateResponse> {
 }
 
 fn query_white_validators(deps: Deps) -> StdResult<WhitelistedValidatorsResponse> {
-    let validators = read_valid_validators(deps.storage)?;
+    let validators = read_validators(deps.storage)?;
     let response = WhitelistedValidatorsResponse { validators };
     Ok(response)
 }
