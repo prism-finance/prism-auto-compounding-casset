@@ -19,6 +19,7 @@ use crate::unbond::{execute_unbond, execute_withdraw_unbonded};
 
 use crate::autho_compounding::execute_update_exchange_rate;
 use crate::bond::execute_bond;
+use crate::utility::validate_params;
 use basset::hub::{
     AllHistoryResponse, Config, ConfigResponse, CurrentBatch, CurrentBatchResponse, Cw20HookMsg,
     ExecuteMsg, InstantiateMsg, Parameters, QueryMsg, State, StateResponse, UnbondRequestsResponse,
@@ -68,6 +69,9 @@ pub fn instantiate(
     };
 
     STATE.save(deps.storage, &state)?;
+
+    //validate the params
+    validate_params(msg.clone())?;
 
     // instantiate parameters
     let params = Parameters {
