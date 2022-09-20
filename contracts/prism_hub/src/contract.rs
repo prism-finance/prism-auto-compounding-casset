@@ -238,20 +238,11 @@ pub fn receive_cw20(
 pub fn execute_update_global(deps: DepsMut, env: Env) -> StdResult<Response> {
     let mut messages: Vec<SubMsg> = vec![];
 
-    let param = PARAMETERS.load(deps.storage)?;
-    let mut state = STATE.load(deps.storage)?;
     let contract_addr = env.clone().contract.address;
 
     // Send withdraw message
-    let mut withdraw_msgs = withdraw_all_rewards(&deps, contract_addr.clone())?;
+    let mut withdraw_msgs = withdraw_all_rewards(&deps, contract_addr)?;
     messages.append(&mut withdraw_msgs);
-
-    let balances = deps.querier.query_all_balances(contract_addr.to_string())?;
-    let principle_balances_before_update = balances
-        .iter()
-        .find(|x| x.denom == param.underlying_coin_denom)
-        .unwrap()
-        .amount;
 
     messages.push(SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
         contract_addr: env.contract.address.to_string(),
@@ -262,7 +253,6 @@ pub fn execute_update_global(deps: DepsMut, env: Env) -> StdResult<Response> {
     //update state last modified
     STATE.update(deps.storage, |mut last_state| -> StdResult<State> {
         last_state.last_index_modification = env.block.time.seconds();
-        state.principle_balance_before_exchange_update = principle_balances_before_update;
         Ok(last_state)
     })?;
 
