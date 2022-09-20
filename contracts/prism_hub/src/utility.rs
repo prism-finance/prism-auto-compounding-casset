@@ -1,5 +1,6 @@
+use crate::state::PAUSE;
 use basset::hub::InstantiateMsg;
-use cosmwasm_std::{Addr, CustomQuery, Decimal, Deps, StdError};
+use cosmwasm_std::{Addr, CustomQuery, Decimal, Deps, Response, StdError, StdResult};
 use cw_controllers::{Admin, AdminError};
 
 const MAINNET_UNDELEGATION_TIME: u64 = 1814400;
@@ -40,4 +41,16 @@ pub fn validate_params(msg: InstantiateMsg) -> Result<(), StdError> {
         StdError::generic_err("underlying coin denom should be uluna");
     }
     Ok(())
+}
+
+pub fn is_contract_paused<Q: CustomQuery>(deps: Deps<Q>) -> StdResult<Response> {
+    let is_paused = PAUSE.load(deps.storage)?;
+
+    if is_paused {
+        return Err(StdError::generic_err(
+            "Contract is paused cannot perform the tx",
+        ));
+    }
+
+    Ok(Response::new())
 }

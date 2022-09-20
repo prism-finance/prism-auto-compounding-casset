@@ -69,6 +69,11 @@ pub enum ExecuteMsg {
     /// Owner's operations
     ////////////////////
 
+    // Pause contract functionalities
+    Pause {},
+    // Unpause contract functionalities
+    Unpause {},
+
     /// Set the owener
     UpdateConfig {
         token_contract: Option<String>,

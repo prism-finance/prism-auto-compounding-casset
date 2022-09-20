@@ -13,13 +13,13 @@ use crate::config::{
 
 use crate::state::{
     all_unbond_history, get_unbond_requests, query_get_finished_amount, read_validators, ADMIN,
-    CONFIG, CURRENT_BATCH, PARAMETERS, STATE,
+    CONFIG, CURRENT_BATCH, PARAMETERS, PAUSE, STATE,
 };
 use crate::unbond::{execute_unbond, execute_withdraw_unbonded};
 
 use crate::autho_compounding::execute_update_exchange_rate;
 use crate::bond::execute_bond;
-use crate::utility::validate_params;
+use crate::utility::{is_contract_paused, unwrap_assert_admin, validate_params};
 use basset::hub::{
     AllHistoryResponse, Config, ConfigResponse, CurrentBatch, CurrentBatchResponse, Cw20HookMsg,
     ExecuteMsg, InstantiateMsg, Parameters, QueryMsg, State, StateResponse, UnbondRequestsResponse,
@@ -37,6 +37,9 @@ pub fn instantiate(
 ) -> StdResult<Response> {
     let sender = info.sender.clone();
     let _sndr_raw = deps.api.addr_canonicalize(sender.as_str())?;
+
+    // keep pause false
+    PAUSE.save(deps.storage, &false)?;
 
     let payment = info
         .funds
@@ -120,39 +123,78 @@ pub fn instantiate(
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> StdResult<Response> {
     match msg {
-        ExecuteMsg::Receive(msg) => receive_cw20(deps, env, info, msg),
-        ExecuteMsg::Bond { validator } => execute_bond(deps, env, info, validator),
-        ExecuteMsg::UpdateGlobalIndex {} => execute_update_global(deps, env),
-        ExecuteMsg::UpdateExchangeRate {} => execute_update_exchange_rate(deps, env, info),
-        ExecuteMsg::WithdrawUnbonded {} => execute_withdraw_unbonded(deps, env, info),
+        ExecuteMsg::Pause {} => {
+            unwrap_assert_admin(deps.as_ref(), ADMIN, &info.sender)?;
+
+            PAUSE.save(deps.storage, &true)?;
+            Ok(Response::new())
+        }
+        ExecuteMsg::Unpause {} => {
+            unwrap_assert_admin(deps.as_ref(), ADMIN, &info.sender)?;
+
+            PAUSE.save(deps.storage, &false)?;
+            Ok(Response::new())
+        }
+        ExecuteMsg::Receive(msg) => {
+            is_contract_paused(deps.as_ref())?;
+            receive_cw20(deps, env, info, msg)
+        }
+        ExecuteMsg::Bond { validator } => {
+            is_contract_paused(deps.as_ref())?;
+            execute_bond(deps, env, info, validator)
+        }
+        ExecuteMsg::UpdateGlobalIndex {} => {
+            is_contract_paused(deps.as_ref())?;
+            execute_update_global(deps, env)
+        }
+        ExecuteMsg::UpdateExchangeRate {} => {
+            is_contract_paused(deps.as_ref())?;
+            execute_update_exchange_rate(deps, env, info)
+        }
+        ExecuteMsg::WithdrawUnbonded {} => {
+            is_contract_paused(deps.as_ref())?;
+            execute_withdraw_unbonded(deps, env, info)
+        }
         ExecuteMsg::RegisterValidator { validator } => {
+            is_contract_paused(deps.as_ref())?;
             execute_register_validator(deps, env, info, validator)
         }
         ExecuteMsg::DeregisterValidator { validator } => {
+            is_contract_paused(deps.as_ref())?;
             execute_deregister_validator(deps, env, info, validator)
         }
-        ExecuteMsg::CheckSlashing {} => execute_slashing(deps, env),
+        ExecuteMsg::CheckSlashing {} => {
+            is_contract_paused(deps.as_ref())?;
+            execute_slashing(deps, env)
+        }
         ExecuteMsg::UpdateParams {
             epoch_period,
             unbonding_period,
             peg_recovery_fee,
             er_threshold,
             protocol_fee,
-        } => execute_update_params(
-            deps,
-            env,
-            info,
-            epoch_period,
-            unbonding_period,
-            peg_recovery_fee,
-            er_threshold,
-            protocol_fee,
-        ),
+        } => {
+            is_contract_paused(deps.as_ref())?;
+            execute_update_params(
+                deps,
+                env,
+                info,
+                epoch_period,
+                unbonding_period,
+                peg_recovery_fee,
+                er_threshold,
+                protocol_fee,
+            )
+        }
         ExecuteMsg::UpdateConfig {
             token_contract,
             protocol_fee_collector,
-        } => execute_update_config(deps, env, info, token_contract, protocol_fee_collector),
+        } => {
+            is_contract_paused(deps.as_ref())?;
+            execute_update_config(deps, env, info, token_contract, protocol_fee_collector)
+        }
         ExecuteMsg::UpdateAdmin { admin } => {
+            is_contract_paused(deps.as_ref())?;
             let admin = deps.api.addr_validate(&admin)?;
             match ADMIN.execute_update_admin(deps, info, Some(admin)) {
                 Ok(r) => Ok(r),

@@ -41,7 +41,7 @@ use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};
 
 use super::mock_querier::{mock_dependencies as dependencies, WasmMockQuerier};
 use crate::math::decimal_division;
-use crate::state::{read_unbond_wait_list, ADMIN};
+use crate::state::{read_unbond_wait_list, ADMIN, PAUSE};
 use basset::hub::QueryMsg::{Admin, AllHistory, UnbondRequests, WithdrawableUnbonded};
 use cw20::Cw20ExecuteMsg::{Burn, Mint};
 use cw_controllers::AdminResponse;
@@ -2936,6 +2936,74 @@ pub fn proper_protocol_fee() {
             amount: vec![Coin::new(9u128, "uluna")],
         })),
     );
+}
+#[test]
+pub fn proper_pause() {
+    let mut deps = dependencies(&[]);
+
+    let validator = sample_validator(DEFAULT_VALIDATOR.to_string());
+    set_validator_mock(&mut deps.querier);
+
+    let owner = "owner1".to_string();
+    let token_contract = "token".to_string();
+
+    init(&mut deps, owner, token_contract, validator.address);
+
+    let is_pause = PAUSE.load(&deps.storage).unwrap();
+    assert!(!is_pause);
+
+    let pause = ExecuteMsg::Pause {};
+
+    let owner_info = mock_info("owner2", &[]);
+    let res = execute(deps.as_mut(), mock_env(), owner_info, pause.clone()).is_err();
+    assert!(res);
+
+    let owner_info = mock_info("owner1", &[]);
+    let res = execute(deps.as_mut(), mock_env(), owner_info, pause).unwrap();
+    assert_eq!(res.messages.len(), 0);
+
+    let is_pause = PAUSE.load(&deps.storage).unwrap();
+    assert!(is_pause);
+
+    // try to execute one
+    let register_msg = UpdateConfig {
+        token_contract: None,
+        protocol_fee_collector: None,
+    };
+
+    let owner_info = mock_info("owner1", &[]);
+    let res = execute(deps.as_mut(), mock_env(), owner_info, register_msg).unwrap_err();
+    assert_eq!(
+        res,
+        StdError::generic_err("Contract is paused cannot perform the tx")
+    );
+
+    // try to execute one
+    let register_msg = UpdateAdmin {
+        admin: "new owner".to_string(),
+    };
+
+    let owner_info = mock_info("new owner", &[]);
+    let res = execute(deps.as_mut(), mock_env(), owner_info, register_msg).unwrap_err();
+    assert_eq!(
+        res,
+        StdError::generic_err("Contract is paused cannot perform the tx")
+    );
+
+    let unpause = ExecuteMsg::Unpause {};
+    let owner_info = mock_info("owner1", &[]);
+    let res = execute(deps.as_mut(), mock_env(), owner_info, unpause).unwrap();
+    assert_eq!(res.messages.len(), 0);
+
+    // try to execute one
+    let register_msg = UpdateConfig {
+        token_contract: None,
+        protocol_fee_collector: None,
+    };
+
+    let owner_info = mock_info("owner1", &[]);
+    let res = execute(deps.as_mut(), mock_env(), owner_info, register_msg).unwrap();
+    assert_eq!(res.messages.len(), 0);
 }
 
 fn set_delegation(querier: &mut WasmMockQuerier, validator: Validator, amount: u128, denom: &str) {
