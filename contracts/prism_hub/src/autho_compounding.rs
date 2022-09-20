@@ -28,7 +28,7 @@ pub fn execute_update_exchange_rate(
     let params: Parameters = PARAMETERS.load(deps.storage)?;
     let new_balance: Coin = deps
         .querier
-        .query_balance(contract_address.clone(), params.underlying_coin_denom)?;
+        .query_balance(contract_address.clone(), &params.underlying_coin_denom)?;
 
     let previous_balance = state.principle_balance_before_exchange_update;
 
@@ -65,7 +65,10 @@ pub fn execute_update_exchange_rate(
             Some(fee_collector) => {
                 messages.push(CosmosMsg::Bank(BankMsg::Send {
                     to_address: deps.api.addr_humanize(&fee_collector)?.to_string(),
-                    amount: vec![Coin::new(protocol_fee.u128(), "uluna")],
+                    amount: vec![Coin::new(
+                        protocol_fee.u128(),
+                        &params.underlying_coin_denom,
+                    )],
                 }));
             }
             None => {
@@ -84,7 +87,7 @@ pub fn execute_update_exchange_rate(
                 .unwrap()
                 .validator
                 .to_string(),
-            amount: Coin::new(user_rewards.u128(), "uluna"),
+            amount: Coin::new(user_rewards.u128(), &params.underlying_coin_denom),
         }),
     );
 
