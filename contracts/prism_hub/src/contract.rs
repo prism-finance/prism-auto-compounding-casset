@@ -447,6 +447,10 @@ pub(crate) fn query_total_issued(deps: Deps) -> StdResult<Uint128> {
 }
 
 fn query_unbond_requests(deps: Deps, address: String) -> StdResult<UnbondRequestsResponse> {
+    if deps.api.addr_validate(address.as_str()).is_err() {
+       return
+        Err(StdError::generic_err("invalid address"));
+    }
     let requests = get_unbond_requests(deps.storage, address.clone())?;
     let res = UnbondRequestsResponse { address, requests };
     Ok(res)
