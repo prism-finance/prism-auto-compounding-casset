@@ -20,13 +20,10 @@ use crate::unbond::{execute_unbond, execute_withdraw_unbonded};
 use crate::autho_compounding::execute_update_exchange_rate;
 use crate::bond::execute_bond;
 use crate::utility::{is_contract_paused, unwrap_assert_admin, validate_params};
-use basset::hub::{
-    AllHistoryResponse, Config, ConfigResponse, CurrentBatch, CurrentBatchResponse, Cw20HookMsg,
-    ExecuteMsg, InstantiateMsg, Parameters, QueryMsg, State, StateResponse, UnbondRequestsResponse,
-    WhitelistedValidatorsResponse, WithdrawableUnbondedResponse,
-};
+use basset::hub::{AllHistoryResponse, Config, ConfigResponse, CurrentBatch, CurrentBatchResponse, Cw20HookMsg, ExecuteMsg, InstantiateMsg, MigrateMsg, Parameters, QueryMsg, State, StateResponse, UnbondRequestsResponse, WhitelistedValidatorsResponse, WithdrawableUnbondedResponse};
 use cw20::{Cw20QueryMsg, Cw20ReceiveMsg, TokenInfoResponse};
 use cw_controllers::AdminError;
+use crate::migration::{migrate_config, migrate_params};
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -464,4 +461,14 @@ fn query_unbond_requests_limitation(
     let requests = all_unbond_history(deps.storage, start, limit)?;
     let res = AllHistoryResponse { history: requests };
     Ok(res)
+}
+
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
+    migrate_config(_deps.storage)?;
+
+    migrate_params(_deps.storage)?;
+
+    Ok(Response::new())
 }
