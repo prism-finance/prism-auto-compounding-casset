@@ -1,6 +1,7 @@
 use std::ops::Mul;
 
-use crate::state::{CONFIG, PARAMETERS, STATE};
+use crate::contract::query_total_issued;
+use crate::state::{CONFIG, CURRENT_BATCH, PARAMETERS, STATE};
 use basset::hub::{Parameters, State};
 use cosmwasm_std::{
     BankMsg, Coin, CosmosMsg, Decimal, DepsMut, Env, MessageInfo, Response, StakingMsg, StdError,
@@ -45,8 +46,14 @@ pub fn execute_update_exchange_rate(
 
     state.principle_balance_before_exchange_update = new_balance.amount;
 
+    // current batch requested fee is need for accurate exchange rate computation.
+    let current_batch = CURRENT_BATCH.load(deps.storage)?;
+    let requested_with_fee = current_batch.requested_with_fee;
+
+    let total_issued = query_total_issued(deps.as_ref())?;
+
     // exchange_rate += user_rewards / total_balance;
-    state.exchange_rate += Decimal::from_ratio(user_rewards, state.total_bond_amount);
+    state.exchange_rate += Decimal::from_ratio(user_rewards, total_issued + requested_with_fee);
     STATE.save(deps.storage, &state)?;
 
     let all_delegations = deps
@@ -79,17 +86,19 @@ pub fn execute_update_exchange_rate(
         }
     };
 
-    messages.push(
-        // send the delegate message
-        CosmosMsg::Staking(StakingMsg::Delegate {
-            validator: all_delegations
-                .get(random_index)
-                .unwrap()
-                .validator
-                .to_string(),
-            amount: Coin::new(user_rewards.u128(), &params.underlying_coin_denom),
-        }),
-    );
+    if user_rewards != Uint128::zero() {
+        messages.push(
+            // send the delegate message
+            CosmosMsg::Staking(StakingMsg::Delegate {
+                validator: all_delegations
+                    .get(random_index)
+                    .unwrap()
+                    .validator
+                    .to_string(),
+                amount: Coin::new(user_rewards.u128(), &params.underlying_coin_denom),
+            }),
+        );
+    }
 
     Ok(Response::new()
         .add_messages(messages)

@@ -179,6 +179,7 @@ pub struct StateResponse {
     pub exchange_rate: Decimal,
     pub total_bond_amount: Uint128,
     pub last_index_modification: u64,
+    pub principle_balance_before_exchange_update: Uint128,
     pub prev_hub_balance: Uint128,
     pub actual_unbonded_amount: Uint128,
     pub last_unbonded_time: u64,
@@ -216,6 +217,3 @@ pub struct UnbondRequestsResponse {
 pub struct AllHistoryResponse {
     pub history: Vec<UnbondHistory>,
 }
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
-pub struct MigrateMsg{}

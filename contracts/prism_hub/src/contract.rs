@@ -20,10 +20,13 @@ use crate::unbond::{execute_unbond, execute_withdraw_unbonded};
 use crate::autho_compounding::execute_update_exchange_rate;
 use crate::bond::execute_bond;
 use crate::utility::{is_contract_paused, unwrap_assert_admin, validate_params};
-use basset::hub::{AllHistoryResponse, Config, ConfigResponse, CurrentBatch, CurrentBatchResponse, Cw20HookMsg, ExecuteMsg, InstantiateMsg, MigrateMsg, Parameters, QueryMsg, State, StateResponse, UnbondRequestsResponse, WhitelistedValidatorsResponse, WithdrawableUnbondedResponse};
+use basset::hub::{
+    AllHistoryResponse, Config, ConfigResponse, CurrentBatch, CurrentBatchResponse, Cw20HookMsg,
+    ExecuteMsg, InstantiateMsg, Parameters, QueryMsg, State, StateResponse, UnbondRequestsResponse,
+    WhitelistedValidatorsResponse, WithdrawableUnbondedResponse,
+};
 use cw20::{Cw20QueryMsg, Cw20ReceiveMsg, TokenInfoResponse};
 use cw_controllers::AdminError;
-use crate::migration::{migrate_config, migrate_params};
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -235,14 +238,23 @@ pub fn receive_cw20(
 pub fn execute_update_global(deps: DepsMut, env: Env) -> StdResult<Response> {
     let mut messages: Vec<SubMsg> = vec![];
 
-    let contract_addr = env.clone().contract.address;
+    let contract_addr = env.contract.address.clone();
+
+    let param = PARAMETERS.load(deps.storage)?;
 
     // Send withdraw message
-    let mut withdraw_msgs = withdraw_all_rewards(&deps, contract_addr)?;
+    let mut withdraw_msgs = withdraw_all_rewards(&deps, contract_addr.clone())?;
     messages.append(&mut withdraw_msgs);
 
+    let balances = deps.querier.query_all_balances(contract_addr.to_string())?;
+    let principle_balances_before_update = balances
+        .iter()
+        .find(|x| x.denom == param.underlying_coin_denom)
+        .unwrap()
+        .amount;
+
     messages.push(SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: env.contract.address.to_string(),
+        contract_addr: contract_addr.to_string(),
         msg: to_binary(&ExecuteMsg::UpdateExchangeRate {}).unwrap(),
         funds: vec![],
     })));
@@ -250,6 +262,7 @@ pub fn execute_update_global(deps: DepsMut, env: Env) -> StdResult<Response> {
     //update state last modified
     STATE.update(deps.storage, |mut last_state| -> StdResult<State> {
         last_state.last_index_modification = env.block.time.seconds();
+        last_state.principle_balance_before_exchange_update = principle_balances_before_update;
         Ok(last_state)
     })?;
 
@@ -379,10 +392,12 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
 
 fn query_state(deps: Deps) -> StdResult<StateResponse> {
     let state = STATE.load(deps.storage)?;
+
     let res = StateResponse {
         exchange_rate: state.exchange_rate,
         total_bond_amount: state.total_bond_amount,
         last_index_modification: state.last_index_modification,
+        principle_balance_before_exchange_update: state.principle_balance_before_exchange_update,
         prev_hub_balance: state.prev_hub_balance,
         actual_unbonded_amount: state.actual_unbonded_amount,
         last_unbonded_time: state.last_unbonded_time,
@@ -445,8 +460,7 @@ pub(crate) fn query_total_issued(deps: Deps) -> StdResult<Uint128> {
 
 fn query_unbond_requests(deps: Deps, address: String) -> StdResult<UnbondRequestsResponse> {
     if deps.api.addr_validate(address.as_str()).is_err() {
-       return
-        Err(StdError::generic_err("invalid address"));
+        return Err(StdError::generic_err("invalid address"));
     }
     let requests = get_unbond_requests(deps.storage, address.clone())?;
     let res = UnbondRequestsResponse { address, requests };
@@ -461,14 +475,4 @@ fn query_unbond_requests_limitation(
     let requests = all_unbond_history(deps.storage, start, limit)?;
     let res = AllHistoryResponse { history: requests };
     Ok(res)
-}
-
-
-#[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
-    migrate_config(_deps.storage)?;
-
-    migrate_params(_deps.storage)?;
-
-    Ok(Response::new())
 }

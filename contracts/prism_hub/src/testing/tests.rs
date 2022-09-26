@@ -207,6 +207,7 @@ fn proper_initialization() {
         exchange_rate: Decimal::one(),
         total_bond_amount: owner_info.funds[0].amount,
         last_index_modification: mock_env().block.time.seconds(),
+        principle_balance_before_exchange_update: Default::default(),
         prev_hub_balance: Default::default(),
         actual_unbonded_amount: Default::default(),
         last_unbonded_time: mock_env().block.time.seconds(),
@@ -748,6 +749,14 @@ pub fn proper_update_exchange_rate() {
 
     assert_eq!(res, StdError::generic_err("Unauthorized"));
 
+    let new_balance = Uint128::new(1100);
+    deps.querier.with_native_balances(&[(
+        MOCK_CONTRACT_ADDR.to_string(),
+        Coin {
+            denom: "uluna".to_string(),
+            amount: new_balance,
+        },
+    )]);
     let update_exchange_rate = ExecuteMsg::UpdateExchangeRate {};
 
     let info = mock_info(MOCK_CONTRACT_ADDR, &[]);
@@ -759,7 +768,7 @@ pub fn proper_update_exchange_rate() {
         res.messages[0],
         SubMsg::new(CosmosMsg::Staking(StakingMsg::Delegate {
             validator: validator.address.clone(),
-            amount: Coin::new(900, "uluna"),
+            amount: Coin::new(100, "uluna"),
         }))
     );
 
@@ -769,14 +778,6 @@ pub fn proper_update_exchange_rate() {
     let info = mock_info(&addr1, &[]);
 
     // set balance before executing the exchange rate update
-    deps.querier.with_native_balances(&[(
-        MOCK_CONTRACT_ADDR.to_string(),
-        Coin {
-            denom: "uluna".to_string(),
-            amount: Uint128::new(1000),
-        },
-    )]);
-
     let res = execute(deps.as_mut(), mock_env(), info, reward_msg).unwrap();
     assert_eq!(res.messages.len(), 2);
     assert_eq!(
@@ -787,6 +788,15 @@ pub fn proper_update_exchange_rate() {
             funds: vec![],
         }))
     );
+
+    let new_balance = Uint128::new(1100);
+    deps.querier.with_native_balances(&[(
+        MOCK_CONTRACT_ADDR.to_string(),
+        Coin {
+            denom: "uluna".to_string(),
+            amount: new_balance,
+        },
+    )]);
 
     let update_exchange_rate = ExecuteMsg::UpdateExchangeRate {};
 
@@ -2852,15 +2862,6 @@ pub fn proper_protocol_fee() {
     assert_eq!(2, res.messages.len());
 
     // set balance before executing the exchange rate update
-    let new_balance = Uint128::new(900);
-    deps.querier.with_native_balances(&[(
-        MOCK_CONTRACT_ADDR.to_string(),
-        Coin {
-            denom: "uluna".to_string(),
-            amount: new_balance,
-        },
-    )]);
-
     set_delegation(
         &mut deps.querier,
         validator.clone(),
@@ -2902,8 +2903,6 @@ pub fn proper_protocol_fee() {
         _ => panic!("Unexpected message: {:?}", swap),
     }
 
-    let update_exchange_rate = ExecuteMsg::UpdateExchangeRate {};
-
     // need to set the protocol fee collector address
     let register_msg = UpdateConfig {
         token_contract: None,
@@ -2924,6 +2923,18 @@ pub fn proper_protocol_fee() {
         protocol_fee_collector
     );
 
+    // set balance before executing the exchange rate update
+    let new_balance = Uint128::new(1100);
+    deps.querier.with_native_balances(&[(
+        MOCK_CONTRACT_ADDR.to_string(),
+        Coin {
+            denom: "uluna".to_string(),
+            amount: new_balance,
+        },
+    )]);
+
+    let update_exchange_rate = ExecuteMsg::UpdateExchangeRate {};
+
     let info = mock_info(MOCK_CONTRACT_ADDR, &[]);
     let res = execute(deps.as_mut(), mock_env(), info, update_exchange_rate).unwrap();
 
@@ -2933,7 +2944,7 @@ pub fn proper_protocol_fee() {
         res.messages[0],
         SubMsg::new(CosmosMsg::Bank(BankMsg::Send {
             to_address: "fee_collector".to_string(),
-            amount: vec![Coin::new(9u128, "uluna")],
+            amount: vec![Coin::new(1u128, "uluna")],
         })),
     );
 }
