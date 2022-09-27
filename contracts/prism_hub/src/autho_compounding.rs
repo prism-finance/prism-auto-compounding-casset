@@ -54,6 +54,8 @@ pub fn execute_update_exchange_rate(
 
     // exchange_rate += user_rewards / total_balance;
     state.exchange_rate += Decimal::from_ratio(user_rewards, total_issued + requested_with_fee);
+    state.total_bond_amount += user_rewards;
+
     STATE.save(deps.storage, &state)?;
 
     let all_delegations = deps
