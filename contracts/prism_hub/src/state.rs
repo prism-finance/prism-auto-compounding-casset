@@ -1,10 +1,14 @@
 use cosmwasm_std::{from_slice, to_vec, Addr, Order, StdError, StdResult, Storage, Uint128};
 use cosmwasm_storage::{Bucket, PrefixedStorage, ReadonlyBucket, ReadonlyPrefixedStorage};
+use cw_controllers::Admin;
 use cw_storage_plus::Item;
 
 use basset::hub::{Config, CurrentBatch, Parameters, State, UnbondHistory, UnbondRequest};
 
 pub type LastBatch = u64;
+
+pub const ADMIN: Admin = Admin::new("admin");
+pub static PAUSE: Item<bool> = Item::new("pause");
 
 pub static PREFIX_WAIT_MAP: &[u8] = b"wait";
 pub static PREFIX_AIRDROP_INFO: &[u8] = b"airedrop_info";
@@ -194,20 +198,6 @@ pub fn is_valid_validator(storage: &dyn Storage, validator_address: String) -> S
         Some(_) => Ok(true),
         None => Ok(false),
     }
-}
-
-/// Read whitelisted validators
-pub fn read_valid_validators(storage: &dyn Storage) -> StdResult<Vec<String>> {
-    let res = ReadonlyPrefixedStorage::new(storage, VALIDATORS);
-    let validators: Vec<String> = res
-        .range(None, None, Order::Ascending)
-        .map(|item| {
-            let (key, _) = item;
-            let sender: String = from_slice(&key).unwrap();
-            sender
-        })
-        .collect();
-    Ok(validators)
 }
 
 /// Store unbond history map

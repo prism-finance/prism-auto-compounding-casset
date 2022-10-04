@@ -39,6 +39,7 @@ cosmwasm-storage = "1.0.0"
 cw-storage-plus = "0.13"
 terra-cosmwasm = { version = "2.2.0" }
 schemars = "0.8.1"
+cw-controllers = "0.14.0"
 serde = { version = "1.0.103", default-features = false, features = ["derive"] }
 snafu = { version = "0.6.3" }
 rand = "0.5.0"

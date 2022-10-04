@@ -69,9 +69,8 @@ impl WasmMockQuerier {
 
                 if key.as_slice().to_vec() == prefix_config {
                     let config = Config {
-                        creator: api.addr_canonicalize("owner1").unwrap(),
                         token_contract: Some(api.addr_canonicalize("token").unwrap()),
-                        porotcol_fee_collector: None,
+                        protocol_fee_collector: None,
                     };
                     SystemResult::Ok(ContractResult::from(to_binary(
                         &to_binary(&config).unwrap(),

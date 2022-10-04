@@ -12,29 +12,34 @@ use crate::config::{
 };
 
 use crate::state::{
-    all_unbond_history, get_unbond_requests, query_get_finished_amount, read_valid_validators,
-    CONFIG, CURRENT_BATCH, PARAMETERS, STATE,
+    all_unbond_history, get_unbond_requests, query_get_finished_amount, read_validators, ADMIN,
+    CONFIG, CURRENT_BATCH, PARAMETERS, PAUSE, STATE,
 };
 use crate::unbond::{execute_unbond, execute_withdraw_unbonded};
 
 use crate::autho_compounding::execute_update_exchange_rate;
 use crate::bond::execute_bond;
+use crate::utility::{is_contract_paused, unwrap_assert_admin, validate_params};
 use basset::hub::{
     AllHistoryResponse, Config, ConfigResponse, CurrentBatch, CurrentBatchResponse, Cw20HookMsg,
     ExecuteMsg, InstantiateMsg, Parameters, QueryMsg, State, StateResponse, UnbondRequestsResponse,
     WhitelistedValidatorsResponse, WithdrawableUnbondedResponse,
 };
 use cw20::{Cw20QueryMsg, Cw20ReceiveMsg, TokenInfoResponse};
+use cw_controllers::AdminError;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
-    deps: DepsMut,
+    mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> StdResult<Response> {
     let sender = info.sender.clone();
     let _sndr_raw = deps.api.addr_canonicalize(sender.as_str())?;
+
+    // keep pause false
+    PAUSE.save(deps.storage, &false)?;
 
     let payment = info
         .funds
@@ -44,11 +49,14 @@ pub fn instantiate(
             StdError::generic_err(format!("No {} assets are provided to bond", "uluna"))
         })?;
 
+    //set the admin
+    let admin = deps.api.addr_validate(info.sender.as_str())?;
+    ADMIN.set(deps.branch(), Some(admin))?;
+
     // store config
     let data = Config {
-        creator: deps.api.addr_canonicalize(info.sender.as_str())?,
         token_contract: None,
-        porotcol_fee_collector: None,
+        protocol_fee_collector: None,
     };
     CONFIG.save(deps.storage, &data)?;
 
@@ -64,6 +72,9 @@ pub fn instantiate(
     };
 
     STATE.save(deps.storage, &state)?;
+
+    //validate the params
+    validate_params(msg.clone())?;
 
     // instantiate parameters
     let params = Parameters {
@@ -112,46 +123,87 @@ pub fn instantiate(
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> StdResult<Response> {
     match msg {
-        ExecuteMsg::Receive(msg) => receive_cw20(deps, env, info, msg),
-        ExecuteMsg::Bond { validator } => execute_bond(deps, env, info, validator),
-        ExecuteMsg::UpdateGlobalIndex {} => execute_update_global(deps, env),
-        ExecuteMsg::UpdateExchangeRate {} => execute_update_exchange_rate(deps, env, info),
-        ExecuteMsg::WithdrawUnbonded {} => execute_withdraw_unbonded(deps, env, info),
+        ExecuteMsg::Pause {} => {
+            unwrap_assert_admin(deps.as_ref(), ADMIN, &info.sender)?;
+
+            PAUSE.save(deps.storage, &true)?;
+            Ok(Response::new())
+        }
+        ExecuteMsg::Unpause {} => {
+            unwrap_assert_admin(deps.as_ref(), ADMIN, &info.sender)?;
+
+            PAUSE.save(deps.storage, &false)?;
+            Ok(Response::new())
+        }
+        ExecuteMsg::Receive(msg) => {
+            is_contract_paused(deps.as_ref())?;
+            receive_cw20(deps, env, info, msg)
+        }
+        ExecuteMsg::Bond { validator } => {
+            is_contract_paused(deps.as_ref())?;
+            execute_bond(deps, env, info, validator)
+        }
+        ExecuteMsg::UpdateGlobalIndex {} => {
+            is_contract_paused(deps.as_ref())?;
+            execute_update_global(deps, env)
+        }
+        ExecuteMsg::UpdateExchangeRate {} => {
+            is_contract_paused(deps.as_ref())?;
+            execute_update_exchange_rate(deps, env, info)
+        }
+        ExecuteMsg::WithdrawUnbonded {} => {
+            is_contract_paused(deps.as_ref())?;
+            execute_withdraw_unbonded(deps, env, info)
+        }
         ExecuteMsg::RegisterValidator { validator } => {
+            is_contract_paused(deps.as_ref())?;
             execute_register_validator(deps, env, info, validator)
         }
         ExecuteMsg::DeregisterValidator { validator } => {
+            is_contract_paused(deps.as_ref())?;
             execute_deregister_validator(deps, env, info, validator)
         }
-        ExecuteMsg::CheckSlashing {} => execute_slashing(deps, env),
+        ExecuteMsg::CheckSlashing {} => {
+            is_contract_paused(deps.as_ref())?;
+            execute_slashing(deps, env)
+        }
         ExecuteMsg::UpdateParams {
             epoch_period,
             unbonding_period,
             peg_recovery_fee,
             er_threshold,
             protocol_fee,
-        } => execute_update_params(
-            deps,
-            env,
-            info,
-            epoch_period,
-            unbonding_period,
-            peg_recovery_fee,
-            er_threshold,
-            protocol_fee,
-        ),
+        } => {
+            is_contract_paused(deps.as_ref())?;
+            execute_update_params(
+                deps,
+                env,
+                info,
+                epoch_period,
+                unbonding_period,
+                peg_recovery_fee,
+                er_threshold,
+                protocol_fee,
+            )
+        }
         ExecuteMsg::UpdateConfig {
-            owner,
             token_contract,
             protocol_fee_collector,
-        } => execute_update_config(
-            deps,
-            env,
-            info,
-            owner,
-            token_contract,
-            protocol_fee_collector,
-        ),
+        } => {
+            is_contract_paused(deps.as_ref())?;
+            execute_update_config(deps, env, info, token_contract, protocol_fee_collector)
+        }
+        ExecuteMsg::UpdateAdmin { admin } => {
+            is_contract_paused(deps.as_ref())?;
+            let admin = deps.api.addr_validate(&admin)?;
+            match ADMIN.execute_update_admin(deps, info, Some(admin)) {
+                Ok(r) => Ok(r),
+                Err(e) => match e {
+                    AdminError::NotAdmin {} => Err(StdError::generic_err("Caller is not admin")),
+                    AdminError::Std(std_error) => Err(std_error),
+                },
+            }
+        }
     }
 }
 
@@ -186,9 +238,9 @@ pub fn receive_cw20(
 pub fn execute_update_global(deps: DepsMut, env: Env) -> StdResult<Response> {
     let mut messages: Vec<SubMsg> = vec![];
 
+    let contract_addr = env.contract.address.clone();
+
     let param = PARAMETERS.load(deps.storage)?;
-    let mut state = STATE.load(deps.storage)?;
-    let contract_addr = env.clone().contract.address;
 
     // Send withdraw message
     let mut withdraw_msgs = withdraw_all_rewards(&deps, contract_addr.clone())?;
@@ -202,7 +254,7 @@ pub fn execute_update_global(deps: DepsMut, env: Env) -> StdResult<Response> {
         .amount;
 
     messages.push(SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: env.contract.address.to_string(),
+        contract_addr: contract_addr.to_string(),
         msg: to_binary(&ExecuteMsg::UpdateExchangeRate {}).unwrap(),
         funds: vec![],
     })));
@@ -210,7 +262,7 @@ pub fn execute_update_global(deps: DepsMut, env: Env) -> StdResult<Response> {
     //update state last modified
     STATE.update(deps.storage, |mut last_state| -> StdResult<State> {
         last_state.last_index_modification = env.block.time.seconds();
-        state.principle_balance_before_exchange_update = principle_balances_before_update;
+        last_state.principle_balance_before_exchange_update = principle_balances_before_update;
         Ok(last_state)
     })?;
 
@@ -303,6 +355,7 @@ pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::AllHistory { start_from, limit } => {
             to_binary(&query_unbond_requests_limitation(deps, start_from, limit)?)
         }
+        QueryMsg::Admin {} => to_binary(&ADMIN.query_admin(deps)?),
     }
 }
 
@@ -320,10 +373,10 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
         None
     };
 
-    let fee_collector: Option<String> = if config.porotcol_fee_collector.is_some() {
+    let fee_collector: Option<String> = if config.protocol_fee_collector.is_some() {
         Some(
             deps.api
-                .addr_humanize(&config.porotcol_fee_collector.unwrap())
+                .addr_humanize(&config.protocol_fee_collector.unwrap())
                 .unwrap()
                 .to_string(),
         )
@@ -332,7 +385,6 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
     };
 
     Ok(ConfigResponse {
-        owner: deps.api.addr_humanize(&config.creator)?.to_string(),
         token_contract: token,
         protocol_fee_collector: fee_collector,
     })
@@ -340,10 +392,12 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
 
 fn query_state(deps: Deps) -> StdResult<StateResponse> {
     let state = STATE.load(deps.storage)?;
+
     let res = StateResponse {
         exchange_rate: state.exchange_rate,
         total_bond_amount: state.total_bond_amount,
         last_index_modification: state.last_index_modification,
+        principle_balance_before_exchange_update: state.principle_balance_before_exchange_update,
         prev_hub_balance: state.prev_hub_balance,
         actual_unbonded_amount: state.actual_unbonded_amount,
         last_unbonded_time: state.last_unbonded_time,
@@ -353,7 +407,7 @@ fn query_state(deps: Deps) -> StdResult<StateResponse> {
 }
 
 fn query_white_validators(deps: Deps) -> StdResult<WhitelistedValidatorsResponse> {
-    let validators = read_valid_validators(deps.storage)?;
+    let validators = read_validators(deps.storage)?;
     let response = WhitelistedValidatorsResponse { validators };
     Ok(response)
 }
@@ -405,6 +459,9 @@ pub(crate) fn query_total_issued(deps: Deps) -> StdResult<Uint128> {
 }
 
 fn query_unbond_requests(deps: Deps, address: String) -> StdResult<UnbondRequestsResponse> {
+    if deps.api.addr_validate(address.as_str()).is_err() {
+        return Err(StdError::generic_err("invalid address"));
+    }
     let requests = get_unbond_requests(deps.storage, address.clone())?;
     let res = UnbondRequestsResponse { address, requests };
     Ok(res)

@@ -36,14 +36,15 @@ use basset::hub::{
 };
 
 use basset::hub::Cw20HookMsg::Unbond;
-use basset::hub::ExecuteMsg::{CheckSlashing, Receive, UpdateConfig, UpdateParams};
+use basset::hub::ExecuteMsg::{CheckSlashing, Receive, UpdateAdmin, UpdateConfig, UpdateParams};
 use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};
 
 use super::mock_querier::{mock_dependencies as dependencies, WasmMockQuerier};
 use crate::math::decimal_division;
-use crate::state::{read_unbond_wait_list, CONFIG};
-use basset::hub::QueryMsg::{AllHistory, UnbondRequests, WithdrawableUnbonded};
+use crate::state::{read_unbond_wait_list, ADMIN, PAUSE};
+use basset::hub::QueryMsg::{Admin, AllHistory, UnbondRequests, WithdrawableUnbonded};
 use cw20::Cw20ExecuteMsg::{Burn, Mint};
+use cw_controllers::AdminResponse;
 use std::borrow::BorrowMut;
 
 const DEFAULT_VALIDATOR: &str = "default-validator";
@@ -95,7 +96,6 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
     instantiate(deps.as_mut(), mock_env(), owner_info.clone(), msg).unwrap();
 
     let register_msg = UpdateConfig {
-        owner: None,
         token_contract: Some(token_contract),
         protocol_fee_collector: None,
     };
@@ -207,6 +207,7 @@ fn proper_initialization() {
         exchange_rate: Decimal::one(),
         total_bond_amount: owner_info.funds[0].amount,
         last_index_modification: mock_env().block.time.seconds(),
+        principle_balance_before_exchange_update: Default::default(),
         prev_hub_balance: Default::default(),
         actual_unbonded_amount: Default::default(),
         last_unbonded_time: mock_env().block.time.seconds(),
@@ -219,12 +220,17 @@ fn proper_initialization() {
     let query_conf: ConfigResponse =
         from_binary(&query(deps.as_ref(), mock_env(), conf).unwrap()).unwrap();
     let expected_conf = ConfigResponse {
-        owner: "owner1".to_string(),
         token_contract: None,
         protocol_fee_collector: None,
     };
 
     assert_eq!(expected_conf, query_conf);
+
+    let admin = Admin {};
+    let query_admin: AdminResponse =
+        from_binary(&query(deps.as_ref(), mock_env(), admin).unwrap()).unwrap();
+
+    assert_eq!(query_admin.admin.unwrap(), "owner1".to_string());
 
     // current branch storage must be initialized
     let current_batch = QueryMsg::CurrentBatch {};
@@ -268,7 +274,10 @@ fn proper_register_validator() {
 
     // invalid requests
     let res = execute(deps.as_mut(), mock_env(), owner_info, msg);
-    assert_eq!(res.unwrap_err(), StdError::generic_err("unauthorized"));
+    assert_eq!(
+        res.unwrap_err(),
+        StdError::generic_err("Caller is not admin")
+    );
 
     //invalid validator
 
@@ -520,7 +529,10 @@ fn proper_deregister() {
 
     let invalid_info = mock_info("invalid", &[]);
     let res = execute(deps.as_mut(), mock_env(), invalid_info, msg);
-    assert_eq!(res.unwrap_err(), StdError::generic_err("unauthorized"));
+    assert_eq!(
+        res.unwrap_err(),
+        StdError::generic_err("Caller is not admin")
+    );
 
     let msg = ExecuteMsg::DeregisterValidator {
         validator: validator.address.clone(),
@@ -737,6 +749,14 @@ pub fn proper_update_exchange_rate() {
 
     assert_eq!(res, StdError::generic_err("Unauthorized"));
 
+    let new_balance = Uint128::new(1100);
+    deps.querier.with_native_balances(&[(
+        MOCK_CONTRACT_ADDR.to_string(),
+        Coin {
+            denom: "uluna".to_string(),
+            amount: new_balance,
+        },
+    )]);
     let update_exchange_rate = ExecuteMsg::UpdateExchangeRate {};
 
     let info = mock_info(MOCK_CONTRACT_ADDR, &[]);
@@ -748,7 +768,7 @@ pub fn proper_update_exchange_rate() {
         res.messages[0],
         SubMsg::new(CosmosMsg::Staking(StakingMsg::Delegate {
             validator: validator.address.clone(),
-            amount: Coin::new(900, "uluna"),
+            amount: Coin::new(100, "uluna"),
         }))
     );
 
@@ -758,14 +778,6 @@ pub fn proper_update_exchange_rate() {
     let info = mock_info(&addr1, &[]);
 
     // set balance before executing the exchange rate update
-    deps.querier.with_native_balances(&[(
-        MOCK_CONTRACT_ADDR.to_string(),
-        Coin {
-            denom: "uluna".to_string(),
-            amount: Uint128::new(1000),
-        },
-    )]);
-
     let res = execute(deps.as_mut(), mock_env(), info, reward_msg).unwrap();
     assert_eq!(res.messages.len(), 2);
     assert_eq!(
@@ -776,6 +788,15 @@ pub fn proper_update_exchange_rate() {
             funds: vec![],
         }))
     );
+
+    let new_balance = Uint128::new(1100);
+    deps.querier.with_native_balances(&[(
+        MOCK_CONTRACT_ADDR.to_string(),
+        Coin {
+            denom: "uluna".to_string(),
+            amount: new_balance,
+        },
+    )]);
 
     let update_exchange_rate = ExecuteMsg::UpdateExchangeRate {};
 
@@ -2395,7 +2416,10 @@ pub fn test_update_params() {
         invalid_info,
         update_prams.clone(),
     );
-    assert_eq!(res.unwrap_err(), StdError::generic_err("unauthorized"));
+    assert_eq!(
+        res.unwrap_err(),
+        StdError::generic_err("Caller is not admin")
+    );
     let creator_info = mock_info("owner1", &[]);
     let res = execute(deps.as_mut(), mock_env(), creator_info, update_prams).unwrap();
     assert_eq!(res.messages.len(), 0);
@@ -2672,44 +2696,39 @@ pub fn proper_update_config() {
     let token_contract = "token".to_string();
     let protocol_fee_collector = "fee_collector".to_string();
 
-    init(
-        &mut deps,
-        owner.clone(),
-        token_contract.clone(),
-        validator.address,
-    );
+    init(&mut deps, owner.clone(), token_contract, validator.address);
 
-    let config = QueryMsg::Config {};
-    let config_query: ConfigResponse =
-        from_binary(&query(deps.as_ref(), mock_env(), config).unwrap()).unwrap();
-    assert_eq!(&config_query.token_contract.unwrap(), &token_contract);
-
+    let admin = Admin {};
+    let query_admin: AdminResponse =
+        from_binary(&query(deps.as_ref(), mock_env(), admin).unwrap()).unwrap();
     //make sure the other configs are still the same.
-    assert_eq!(&config_query.owner, &owner);
+    assert_eq!(query_admin.admin.unwrap(), owner);
 
     // only the owner can call this message
-    let update_config = UpdateConfig {
-        owner: Some(new_owner.clone()),
-        token_contract: None,
-        protocol_fee_collector: None,
+    let update_admin = UpdateAdmin {
+        admin: new_owner.clone(),
     };
+
     let info = mock_info(&invalid_owner, &[]);
-    let res = execute(deps.as_mut(), mock_env(), info, update_config);
-    assert_eq!(res.unwrap_err(), StdError::generic_err("unauthorized"));
+    let res = execute(deps.as_mut(), mock_env(), info, update_admin);
+    assert_eq!(
+        res.unwrap_err(),
+        StdError::generic_err("Caller is not admin")
+    );
 
     // change the owner
-    let update_config = UpdateConfig {
-        owner: Some(new_owner.clone()),
-        token_contract: None,
-        protocol_fee_collector: None,
+    let update_admin = UpdateAdmin {
+        admin: new_owner.clone(),
     };
+
     let info = mock_info(&owner, &[]);
-    let res = execute(deps.as_mut(), mock_env(), info, update_config).unwrap();
+    let res = execute(deps.as_mut(), mock_env(), info, update_admin).unwrap();
     assert_eq!(res.messages.len(), 0);
 
-    let config = CONFIG.load(&deps.storage).unwrap();
-    let new_owner_raw = deps.api.addr_canonicalize(&new_owner).unwrap();
-    assert_eq!(new_owner_raw, config.creator);
+    // let config = CONFIG.load(&deps.storage).unwrap();
+    let new_owner_raw = new_owner.clone();
+    let admin = ADMIN.get(deps.as_ref()).unwrap().unwrap();
+    assert_eq!(new_owner_raw, admin);
 
     // new owner can send the owner related messages
     let update_prams = UpdateParams {
@@ -2735,10 +2754,12 @@ pub fn proper_update_config() {
 
     let new_owner_info = mock_info(&owner, &[]);
     let res = execute(deps.as_mut(), mock_env(), new_owner_info, update_prams);
-    assert_eq!(res.unwrap_err(), StdError::generic_err("unauthorized"));
+    assert_eq!(
+        res.unwrap_err(),
+        StdError::generic_err("Caller is not admin")
+    );
 
     let update_config = UpdateConfig {
-        owner: None,
         token_contract: Some("new token".to_string()),
         protocol_fee_collector: None,
     };
@@ -2754,10 +2775,13 @@ pub fn proper_update_config() {
         "new token".to_string()
     );
 
-    assert_eq!(config_query.owner, new_owner);
+    let admin = Admin {};
+    let query_admin: AdminResponse =
+        from_binary(&query(deps.as_ref(), mock_env(), admin).unwrap()).unwrap();
+    //make sure the other configs are still the same.
+    assert_eq!(query_admin.admin.unwrap(), new_owner);
 
     let update_config = UpdateConfig {
-        owner: None,
         token_contract: None,
         protocol_fee_collector: Some(protocol_fee_collector),
     };
@@ -2773,7 +2797,11 @@ pub fn proper_update_config() {
         "fee_collector".to_string()
     );
 
-    assert_eq!(config_query.owner, new_owner);
+    let admin = Admin {};
+    let query_admin: AdminResponse =
+        from_binary(&query(deps.as_ref(), mock_env(), admin).unwrap()).unwrap();
+    //make sure the other configs are still the same.
+    assert_eq!(query_admin.admin.unwrap(), new_owner);
 }
 
 #[test]
@@ -2834,15 +2862,6 @@ pub fn proper_protocol_fee() {
     assert_eq!(2, res.messages.len());
 
     // set balance before executing the exchange rate update
-    let new_balance = Uint128::new(900);
-    deps.querier.with_native_balances(&[(
-        MOCK_CONTRACT_ADDR.to_string(),
-        Coin {
-            denom: "uluna".to_string(),
-            amount: new_balance,
-        },
-    )]);
-
     set_delegation(
         &mut deps.querier,
         validator.clone(),
@@ -2884,11 +2903,8 @@ pub fn proper_protocol_fee() {
         _ => panic!("Unexpected message: {:?}", swap),
     }
 
-    let update_exchange_rate = ExecuteMsg::UpdateExchangeRate {};
-
     // need to set the protocol fee collector address
     let register_msg = UpdateConfig {
-        owner: None,
         token_contract: None,
         protocol_fee_collector: Some(protocol_fee_collector.clone()),
     };
@@ -2907,10 +2923,98 @@ pub fn proper_protocol_fee() {
         protocol_fee_collector
     );
 
+    // set balance before executing the exchange rate update
+    let new_balance = Uint128::new(1100);
+    deps.querier.with_native_balances(&[(
+        MOCK_CONTRACT_ADDR.to_string(),
+        Coin {
+            denom: "uluna".to_string(),
+            amount: new_balance,
+        },
+    )]);
+
+    let update_exchange_rate = ExecuteMsg::UpdateExchangeRate {};
+
     let info = mock_info(MOCK_CONTRACT_ADDR, &[]);
     let res = execute(deps.as_mut(), mock_env(), info, update_exchange_rate).unwrap();
 
     assert_eq!(res.messages.len(), 2);
+
+    assert_eq!(
+        res.messages[0],
+        SubMsg::new(CosmosMsg::Bank(BankMsg::Send {
+            to_address: "fee_collector".to_string(),
+            amount: vec![Coin::new(1u128, "uluna")],
+        })),
+    );
+}
+#[test]
+pub fn proper_pause() {
+    let mut deps = dependencies(&[]);
+
+    let validator = sample_validator(DEFAULT_VALIDATOR.to_string());
+    set_validator_mock(&mut deps.querier);
+
+    let owner = "owner1".to_string();
+    let token_contract = "token".to_string();
+
+    init(&mut deps, owner, token_contract, validator.address);
+
+    let is_pause = PAUSE.load(&deps.storage).unwrap();
+    assert!(!is_pause);
+
+    let pause = ExecuteMsg::Pause {};
+
+    let owner_info = mock_info("owner2", &[]);
+    let res = execute(deps.as_mut(), mock_env(), owner_info, pause.clone()).is_err();
+    assert!(res);
+
+    let owner_info = mock_info("owner1", &[]);
+    let res = execute(deps.as_mut(), mock_env(), owner_info, pause).unwrap();
+    assert_eq!(res.messages.len(), 0);
+
+    let is_pause = PAUSE.load(&deps.storage).unwrap();
+    assert!(is_pause);
+
+    // try to execute one
+    let register_msg = UpdateConfig {
+        token_contract: None,
+        protocol_fee_collector: None,
+    };
+
+    let owner_info = mock_info("owner1", &[]);
+    let res = execute(deps.as_mut(), mock_env(), owner_info, register_msg).unwrap_err();
+    assert_eq!(
+        res,
+        StdError::generic_err("Contract is paused cannot perform the tx")
+    );
+
+    // try to execute one
+    let register_msg = UpdateAdmin {
+        admin: "new owner".to_string(),
+    };
+
+    let owner_info = mock_info("new owner", &[]);
+    let res = execute(deps.as_mut(), mock_env(), owner_info, register_msg).unwrap_err();
+    assert_eq!(
+        res,
+        StdError::generic_err("Contract is paused cannot perform the tx")
+    );
+
+    let unpause = ExecuteMsg::Unpause {};
+    let owner_info = mock_info("owner1", &[]);
+    let res = execute(deps.as_mut(), mock_env(), owner_info, unpause).unwrap();
+    assert_eq!(res.messages.len(), 0);
+
+    // try to execute one
+    let register_msg = UpdateConfig {
+        token_contract: None,
+        protocol_fee_collector: None,
+    };
+
+    let owner_info = mock_info("owner1", &[]);
+    let res = execute(deps.as_mut(), mock_env(), owner_info, register_msg).unwrap();
+    assert_eq!(res.messages.len(), 0);
 }
 
 fn set_delegation(querier: &mut WasmMockQuerier, validator: Validator, amount: u128, denom: &str) {
