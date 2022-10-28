@@ -53,13 +53,16 @@ pub fn execute_update_config(
 ) -> StdResult<Response> {
     unwrap_assert_admin(deps.as_ref(), ADMIN, &info.sender)?;
 
-    if let Some(token) = token_contract {
-        let token_raw = deps.api.addr_canonicalize(token.as_str())?;
+    if !CONFIG.load(deps.storage)?.token_contract_registered{
+        if let Some(token) = token_contract {
+            let token_raw = deps.api.addr_canonicalize(token.as_str())?;
 
-        CONFIG.update(deps.storage, |mut last_config| -> StdResult<Config> {
-            last_config.token_contract = Some(token_raw);
-            Ok(last_config)
-        })?;
+            CONFIG.update(deps.storage, |mut last_config| -> StdResult<Config> {
+                last_config.token_contract = Some(token_raw);
+                last_config.token_contract_registered= true;
+                Ok(last_config)
+            })?;
+        }
     }
 
     if let Some(collector) = protocol_fee_collector {

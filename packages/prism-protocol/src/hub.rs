@@ -47,6 +47,7 @@ pub struct State {
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct Config {
+    pub token_contract_registered: bool,
     pub token_contract: Option<CanonicalAddr>,
     pub protocol_fee_collector: Option<CanonicalAddr>,
 }

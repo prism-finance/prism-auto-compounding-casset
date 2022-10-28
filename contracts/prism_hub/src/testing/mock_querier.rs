@@ -69,6 +69,7 @@ impl WasmMockQuerier {
 
                 if key.as_slice().to_vec() == prefix_config {
                     let config = Config {
+                        token_contract_registered: false,
                         token_contract: Some(api.addr_canonicalize("token").unwrap()),
                         protocol_fee_collector: None,
                     };

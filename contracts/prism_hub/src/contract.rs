@@ -55,6 +55,7 @@ pub fn instantiate(
 
     // store config
     let data = Config {
+        token_contract_registered: false,
         token_contract: None,
         protocol_fee_collector: None,
     };
