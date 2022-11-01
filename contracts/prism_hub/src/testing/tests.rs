@@ -2763,17 +2763,20 @@ pub fn proper_update_config() {
         token_contract: Some("new token".to_string()),
         protocol_fee_collector: None,
     };
+    //cannot register the new token
     let new_owner_info = mock_info(&new_owner, &[]);
-    let res = execute(deps.as_mut(), mock_env(), new_owner_info, update_config).unwrap();
-    assert_eq!(res.messages.len(), 0);
+    let res = execute(deps.as_mut(), mock_env(), new_owner_info, update_config).unwrap_err();
+    assert_eq!(
+        res,
+        StdError::generic_err(
+            "Token contract has been registered. Cannot change the token contract"
+        )
+    );
 
     let config = QueryMsg::Config {};
     let config_query: ConfigResponse =
         from_binary(&query(deps.as_ref(), mock_env(), config).unwrap()).unwrap();
-    assert_eq!(
-        config_query.token_contract.unwrap(),
-        "new token".to_string()
-    );
+    assert_eq!(config_query.token_contract.unwrap(), "token".to_string());
 
     let admin = Admin {};
     let query_admin: AdminResponse =
