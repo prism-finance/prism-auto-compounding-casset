@@ -27,6 +27,7 @@ use basset::hub::{
 };
 use cw20::{Cw20QueryMsg, Cw20ReceiveMsg, TokenInfoResponse};
 use cw_controllers::AdminError;
+use basset::gov::MsgVoteWeighted;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -204,6 +205,20 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
                     AdminError::Std(std_error) => Err(std_error),
                 },
             }
+        }
+        // TODO vote should be permissioned: only prism_gov contract can execute vote
+        ExecuteMsg::Vote(vote_msg) => {
+            let stargate_msg = CosmosMsg::Stargate {
+                type_url: "/cosmos.gov.v1.MsgVoteWeighted".to_string(),
+                value: MsgVoteWeighted {
+                    proposal_id: vote_msg.proposal,
+                    voter: env.contract.address.to_string(),
+                    options: vote_msg.options,
+                }.into(),
+            };
+            Ok(
+                Response::new().add_submessage(SubMsg::new(stargate_msg)) // TODO add attributes
+            )
         }
     }
 }

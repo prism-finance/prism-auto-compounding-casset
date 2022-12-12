@@ -2,6 +2,7 @@ use cosmwasm_std::{CanonicalAddr, Decimal, Uint128};
 use cw20::Cw20ReceiveMsg;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use crate::gov::VoteMsg;
 
 pub type UnbondRequest = Vec<(u64, Uint128)>;
 
@@ -136,6 +137,9 @@ pub enum ExecuteMsg {
     /// Unbond the underlying coin denom.
     /// Burn the received basset token.
     Receive(Cw20ReceiveMsg),
+
+    // Vote on be half of bonding accounts
+    Vote(VoteMsg)
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]

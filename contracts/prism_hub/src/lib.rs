@@ -9,6 +9,7 @@ mod config;
 mod math;
 mod unbond;
 mod utility;
+mod vote;
 
 #[cfg(test)]
 mod testing;
