@@ -80,9 +80,8 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
 
 #[cfg(test)]
 mod test {
-    use cosmwasm_std::{coin, coins, CosmosMsg, IbcMsg, StdError, Uint128};
-    use cosmwasm_std::testing::{MOCK_CONTRACT_ADDR, mock_env, mock_info};
-    use cw_utils::PaymentError;
+    use cosmwasm_std::{from_binary, StdError};
+    use cosmwasm_std::testing::{mock_env};
 
     use crate::test_helpers::*;
 
@@ -90,7 +89,7 @@ mod test {
 
     #[test]
     fn setup_and_query() {
-        let deps = setup(&["channel-3", "channel-7"], &[]);
+        let deps = setup(&["channel-3", "channel-7"]);
 
         let raw_list = query(deps.as_ref(), mock_env(), QueryMsg::ListChannels {}).unwrap();
         let list_res: ListChannelsResponse = from_binary(&raw_list).unwrap();
@@ -108,8 +107,6 @@ mod test {
             .unwrap();
         let chan_res: ChannelResponse = from_binary(&raw_channel).unwrap();
         assert_eq!(chan_res.info, mock_channel_info("channel-3"));
-        assert_eq!(0, chan_res.total_sent.len());
-        assert_eq!(0, chan_res.balances.len());
 
         let err = query(
             deps.as_ref(),
@@ -119,6 +116,6 @@ mod test {
             },
         )
             .unwrap_err();
-        assert_eq!(err, StdError::not_found("cw20_ics20::state::ChannelInfo"));
+        assert_eq!(err, StdError::not_found("prism_gov::state::ChannelInfo"));
     }
 }
