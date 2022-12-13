@@ -50,6 +50,7 @@ pub fn execute_update_config(
     info: MessageInfo,
     token_contract: Option<String>,
     protocol_fee_collector: Option<String>,
+    pgov_contract: Option<String>,
 ) -> StdResult<Response> {
     unwrap_assert_admin(deps.as_ref(), ADMIN, &info.sender)?;
 
@@ -72,6 +73,16 @@ pub fn execute_update_config(
 
         CONFIG.update(deps.storage, |mut last_config| -> StdResult<Config> {
             last_config.protocol_fee_collector = Some(collector);
+            Ok(last_config)
+        })?;
+    }
+
+    // FIXME can we change the pgov contract address after it was set
+    if let Some(pgov) = pgov_contract {
+        let pgov_contract = deps.api.addr_canonicalize(pgov.as_str())?;
+
+        CONFIG.update(deps.storage, |mut last_config| -> StdResult<Config> {
+            last_config.pgov_contract = Some(pgov_contract);
             Ok(last_config)
         })?;
     }

@@ -1,33 +1,32 @@
-#[cfg(not(feature = "library"))]
-use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    attr, from_binary, to_binary, Addr, Binary, CosmosMsg, Decimal, Deps, DepsMut, DistributionMsg,
-    Env, MessageInfo, QueryRequest, Response, StakingMsg, StdError, StdResult, SubMsg, Uint128,
+    Addr, attr, Binary, CosmosMsg, Decimal, Deps, DepsMut, DistributionMsg, Env, from_binary,
+    MessageInfo, QueryRequest, Response, StakingMsg, StdError, StdResult, SubMsg, to_binary, Uint128,
     WasmMsg, WasmQuery,
 };
+#[cfg(not(feature = "library"))]
+use cosmwasm_std::entry_point;
+use cw20::{Cw20QueryMsg, Cw20ReceiveMsg, TokenInfoResponse};
+use cw_controllers::AdminError;
 
-use crate::config::{
-    execute_deregister_validator, execute_register_validator, execute_update_config,
-    execute_update_params,
-};
-
-use crate::state::{
-    all_unbond_history, get_unbond_requests, query_get_finished_amount, read_validators, ADMIN,
-    CONFIG, CURRENT_BATCH, PARAMETERS, PAUSE, STATE,
-};
-use crate::unbond::{execute_unbond, execute_withdraw_unbonded};
-
-use crate::autho_compounding::execute_update_exchange_rate;
-use crate::bond::execute_bond;
-use crate::utility::{is_contract_paused, unwrap_assert_admin, validate_params};
+use basset::gov::MsgVoteWeighted;
 use basset::hub::{
     AllHistoryResponse, Config, ConfigResponse, CurrentBatch, CurrentBatchResponse, Cw20HookMsg,
     ExecuteMsg, InstantiateMsg, Parameters, QueryMsg, State, StateResponse, UnbondRequestsResponse,
     WhitelistedValidatorsResponse, WithdrawableUnbondedResponse,
 };
-use cw20::{Cw20QueryMsg, Cw20ReceiveMsg, TokenInfoResponse};
-use cw_controllers::AdminError;
-use basset::gov::MsgVoteWeighted;
+
+use crate::autho_compounding::execute_update_exchange_rate;
+use crate::bond::execute_bond;
+use crate::config::{
+    execute_deregister_validator, execute_register_validator, execute_update_config,
+    execute_update_params,
+};
+use crate::state::{
+    ADMIN, all_unbond_history, CONFIG, CURRENT_BATCH, get_unbond_requests,
+    PARAMETERS, PAUSE, query_get_finished_amount, read_validators, STATE,
+};
+use crate::unbond::{execute_unbond, execute_withdraw_unbonded};
+use crate::utility::{is_contract_paused, unwrap_assert_admin, validate_params};
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -59,6 +58,7 @@ pub fn instantiate(
         token_contract_registered: false,
         token_contract: None,
         protocol_fee_collector: None,
+        pgov_contract: None,
     };
     CONFIG.save(deps.storage, &data)?;
 
@@ -191,9 +191,10 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
         ExecuteMsg::UpdateConfig {
             token_contract,
             protocol_fee_collector,
+            pgov_contract
         } => {
             is_contract_paused(deps.as_ref())?;
-            execute_update_config(deps, env, info, token_contract, protocol_fee_collector)
+            execute_update_config(deps, env, info, token_contract, protocol_fee_collector, pgov_contract)
         }
         ExecuteMsg::UpdateAdmin { admin } => {
             is_contract_paused(deps.as_ref())?;
@@ -206,8 +207,13 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
                 },
             }
         }
-        // TODO vote should be permissioned: only prism_gov contract can execute vote
         ExecuteMsg::Vote(vote_msg) => {
+            is_contract_paused(deps.as_ref())?;
+            let pgov_contract = CONFIG.load(deps.storage)?.pgov_contract
+                .expect("the pgov contract must have been registered");
+            if pgov_contract != deps.api.addr_canonicalize(info.sender.as_str())? {
+                return Err(StdError::generic_err("unauthorized"));
+            }
             let stargate_msg = CosmosMsg::Stargate {
                 type_url: "/cosmos.gov.v1.MsgVoteWeighted".to_string(),
                 value: MsgVoteWeighted {
@@ -238,8 +244,8 @@ pub fn receive_cw20(
             let conf = CONFIG.load(deps.storage)?;
             if deps.api.addr_canonicalize(contract_addr.as_str())?
                 != conf
-                    .token_contract
-                    .expect("the token contract must have been registered")
+                .token_contract
+                .expect("the token contract must have been registered")
             {
                 return Err(StdError::generic_err("unauthorized"));
             }
@@ -400,9 +406,21 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
         None
     };
 
+    let pgov: Option<String> = if config.pgov_contract.is_some() {
+        Some(
+            deps.api
+                .addr_humanize(&config.pgov_contract.unwrap())
+                .unwrap()
+                .to_string(),
+        )
+    } else {
+        None
+    };
+
     Ok(ConfigResponse {
         token_contract: token,
         protocol_fee_collector: fee_collector,
+        pgov_contract: pgov,
     })
 }
 

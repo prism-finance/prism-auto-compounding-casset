@@ -98,6 +98,7 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
     let register_msg = UpdateConfig {
         token_contract: Some(token_contract),
         protocol_fee_collector: None,
+        pgov_contract: None,
     };
 
     let res = execute(deps.as_mut(), mock_env(), owner_info, register_msg).unwrap();
@@ -222,6 +223,7 @@ fn proper_initialization() {
     let expected_conf = ConfigResponse {
         token_contract: None,
         protocol_fee_collector: None,
+        pgov_contract: None
     };
 
     assert_eq!(expected_conf, query_conf);
@@ -2762,6 +2764,7 @@ pub fn proper_update_config() {
     let update_config = UpdateConfig {
         token_contract: Some("new token".to_string()),
         protocol_fee_collector: None,
+        pgov_contract: None,
     };
     //cannot register the new token
     let new_owner_info = mock_info(&new_owner, &[]);
@@ -2787,6 +2790,7 @@ pub fn proper_update_config() {
     let update_config = UpdateConfig {
         token_contract: None,
         protocol_fee_collector: Some(protocol_fee_collector),
+        pgov_contract: None,
     };
     let new_owner_info = mock_info(&new_owner, &[]);
     let res = execute(deps.as_mut(), mock_env(), new_owner_info, update_config).unwrap();
@@ -2910,6 +2914,7 @@ pub fn proper_protocol_fee() {
     let register_msg = UpdateConfig {
         token_contract: None,
         protocol_fee_collector: Some(protocol_fee_collector.clone()),
+        pgov_contract: None
     };
 
     let owner_info = mock_info("owner1", &[]);
@@ -2983,6 +2988,7 @@ pub fn proper_pause() {
     let register_msg = UpdateConfig {
         token_contract: None,
         protocol_fee_collector: None,
+        pgov_contract: None
     };
 
     let owner_info = mock_info("owner1", &[]);
@@ -3013,6 +3019,7 @@ pub fn proper_pause() {
     let register_msg = UpdateConfig {
         token_contract: None,
         protocol_fee_collector: None,
+        pgov_contract: None
     };
 
     let owner_info = mock_info("owner1", &[]);

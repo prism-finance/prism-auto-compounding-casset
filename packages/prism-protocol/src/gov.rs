@@ -1,15 +1,11 @@
 use cosmwasm_schema::cw_serde;
+use cosmwasm_std::Binary;
+use prost::{Enumeration, Message};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 /// WeightedVoteOption defines a unit of vote for vote split.
-#[derive(
-    Clone,
-    PartialEq,
-    Eq,
-    ::prost::Message,
-    serde::Serialize,
-    serde::Deserialize,
-    schemars::JsonSchema,
-)]
+#[derive(Clone, PartialEq, Eq, Message, Serialize, Deserialize, JsonSchema)]
 pub struct WeightedVoteOption {
     #[prost(enumeration = "VoteOption", tag = "1")]
     pub option: i32,
@@ -18,7 +14,7 @@ pub struct WeightedVoteOption {
 }
 
 /// VoteOption enumerates the valid vote options for a given governance proposal.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Enumeration)]
 #[repr(i32)]
 pub enum VoteOption {
     /// VOTE_OPTION_UNSPECIFIED defines a no-op vote option.
@@ -34,15 +30,7 @@ pub enum VoteOption {
 }
 
 /// MsgVoteWeighted defines a message to cast a vote.
-#[derive(
-    Clone,
-    PartialEq,
-    Eq,
-    ::prost::Message,
-    serde::Serialize,
-    serde::Deserialize,
-    schemars::JsonSchema,
-)]
+#[derive(Clone, PartialEq, Eq, Message, Serialize, Deserialize, JsonSchema)]
 pub struct MsgVoteWeighted {
     #[prost(uint64, tag = "1")]
     // #[serde(
@@ -60,4 +48,13 @@ pub struct MsgVoteWeighted {
 pub struct VoteMsg {
     pub proposal: u64,
     pub options: Vec<WeightedVoteOption>,
+}
+
+impl From<MsgVoteWeighted> for cosmwasm_std::Binary {
+    fn from(msg: MsgVoteWeighted) -> Self {
+        let mut bytes = Vec::new();
+        Message::encode(&msg, &mut bytes)
+            .expect("Message encoding must be infallible");
+        Binary(bytes)
+    }
 }

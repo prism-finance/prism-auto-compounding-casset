@@ -2,6 +2,7 @@ use cosmwasm_std::{CanonicalAddr, Decimal, Uint128};
 use cw20::Cw20ReceiveMsg;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
 use crate::gov::VoteMsg;
 
 pub type UnbondRequest = Vec<(u64, Uint128)>;
@@ -51,6 +52,7 @@ pub struct Config {
     pub token_contract_registered: bool,
     pub token_contract: Option<CanonicalAddr>,
     pub protocol_fee_collector: Option<CanonicalAddr>,
+    pub pgov_contract: Option<CanonicalAddr>,
 }
 
 impl State {
@@ -80,6 +82,7 @@ pub enum ExecuteMsg {
     UpdateConfig {
         token_contract: Option<String>,
         protocol_fee_collector: Option<String>,
+        pgov_contract: Option<String>,
     },
 
     /// Change the admin (must be called by current admin)
@@ -139,7 +142,7 @@ pub enum ExecuteMsg {
     Receive(Cw20ReceiveMsg),
 
     // Vote on be half of bonding accounts
-    Vote(VoteMsg)
+    Vote(VoteMsg),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
@@ -195,6 +198,7 @@ pub struct StateResponse {
 pub struct ConfigResponse {
     pub token_contract: Option<String>,
     pub protocol_fee_collector: Option<String>,
+    pub pgov_contract: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
@@ -212,6 +216,7 @@ pub struct CurrentBatchResponse {
 pub struct WithdrawableUnbondedResponse {
     pub withdrawable: Uint128,
 }
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct UnbondRequestsResponse {
     pub address: String,
