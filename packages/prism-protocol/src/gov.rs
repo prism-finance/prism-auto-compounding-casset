@@ -50,7 +50,7 @@ pub struct VoteMsg {
     pub options: Vec<WeightedVoteOption>,
 }
 
-impl From<MsgVoteWeighted> for cosmwasm_std::Binary {
+impl From<MsgVoteWeighted> for Binary {
     fn from(msg: MsgVoteWeighted) -> Self {
         let mut bytes = Vec::new();
         Message::encode(&msg, &mut bytes)

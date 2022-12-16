@@ -3,8 +3,10 @@ use cosmwasm_std::{Binary, DepsMut, entry_point, Env, from_binary, IbcBasicRespo
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::error::{ContractError, Never};
 use basset::gov::{VoteMsg, VoteOption, WeightedVoteOption};
+use basset::hub::ExecuteMsg;
+
+use crate::error::{ContractError, Never};
 use crate::state::{CHANNEL_INFO, ChannelInfo, CONFIG};
 
 pub const PGOV_VERSION: &str = "pgov-1";
@@ -38,7 +40,7 @@ pub enum ProposalTallyResultPacketAck {
 
 // create a serialized success message
 fn ack_success() -> Binary {
-    let res = ProposalTallyResultPacketAck::Result(b"1".into());
+    let res = ProposalTallyResultPacketAck::Result(Binary::default());
     to_binary(&res).unwrap()
 }
 
@@ -136,15 +138,18 @@ fn do_ibc_packet_receive(
 
     let proposal = packet_data.proposal_tally_result_packet.proposal_id;
     let tally_result = packet_data.proposal_tally_result_packet.tally_result;
-    let vote_msg = VoteMsg {
-        proposal: proposal.u64(),
-        options: vec![
-            WeightedVoteOption { option: VoteOption::Yes as i32, weight: tally_result.yes_count.to_string() },
-            WeightedVoteOption { option: VoteOption::Abstain as i32, weight: tally_result.abstain_count.to_string() },
-            WeightedVoteOption { option: VoteOption::No as i32, weight: tally_result.no_count.to_string() },
-            WeightedVoteOption { option: VoteOption::NoWithVeto as i32, weight: tally_result.no_with_veto_count.to_string() },
-        ],
-    };
+    let vote_msg = ExecuteMsg::Vote(
+        VoteMsg {
+            proposal: proposal.u64(),
+            options: vec![
+                // FIXME check if tally result weights are zero and ignore them
+                WeightedVoteOption { option: VoteOption::Yes as i32, weight: tally_result.yes_count.to_string() },
+                WeightedVoteOption { option: VoteOption::Abstain as i32, weight: tally_result.abstain_count.to_string() },
+                WeightedVoteOption { option: VoteOption::No as i32, weight: tally_result.no_count.to_string() },
+                WeightedVoteOption { option: VoteOption::NoWithVeto as i32, weight: tally_result.no_with_veto_count.to_string() },
+            ],
+        }
+    );
     let config = CONFIG.load(deps.storage)?;
 
     let wasm_msg = WasmMsg::Execute {
@@ -191,4 +196,47 @@ pub fn ibc_packet_timeout(
     _msg: IbcPacketTimeoutMsg,
 ) -> Result<IbcBasicResponse, ContractError> {
     Err(ContractError::PacketSendNotSupported {})
+}
+
+#[cfg(test)]
+mod test {
+    use cosmwasm_std::{IbcEndpoint, Timestamp};
+    use cosmwasm_std::testing::mock_env;
+
+    use crate::test_helpers::*;
+
+    use super::*;
+
+    #[test]
+    fn test_packet_receive() {
+        let mut deps = setup(&["channel-0"]);
+        let data = PGovPacketData {
+            proposal_tally_result_packet: ProposalTallyResultPacketData {
+                proposal_id: Uint64::new(1),
+                asset: "luna".to_string(),
+                tally_result: TallyResult {
+                    yes_count: "1".to_string(),
+                    abstain_count: "0".to_string(),
+                    no_count: "0".to_string(),
+                    no_with_veto_count: "0".to_string(),
+                },
+            }
+        };
+        let packet = IbcPacket::new(
+            to_binary(&data).unwrap(),
+            IbcEndpoint {
+                port_id: REMOTE_PORT.to_string(),
+                channel_id: "channel-0".to_string(),
+            },
+            IbcEndpoint {
+                port_id: CONTRACT_PORT.to_string(),
+                channel_id: "channel-0".to_string(),
+            },
+            3,
+            Timestamp::from_seconds(1665321069).into(),
+        );
+        let msg = IbcPacketReceiveMsg::new(packet);
+        let result = ibc_packet_receive(deps.as_mut(), mock_env(), msg).unwrap();
+        assert_eq!(1, result.messages.len());
+    }
 }
