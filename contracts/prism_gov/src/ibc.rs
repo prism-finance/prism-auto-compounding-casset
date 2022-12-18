@@ -1,5 +1,7 @@
+use std::str::FromStr;
+
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Binary, DepsMut, entry_point, Env, from_binary, IbcBasicResponse, IbcChannel, IbcChannelCloseMsg, IbcChannelConnectMsg, IbcChannelOpenMsg, IbcOrder, IbcPacket, IbcPacketAckMsg, IbcPacketReceiveMsg, IbcPacketTimeoutMsg, IbcReceiveResponse, Reply, Response, SubMsg, SubMsgResult, to_binary, Uint64, WasmMsg};
+use cosmwasm_std::{Binary, Decimal, DepsMut, entry_point, Env, from_binary, IbcBasicResponse, IbcChannel, IbcChannelCloseMsg, IbcChannelConnectMsg, IbcChannelOpenMsg, IbcOrder, IbcPacket, IbcPacketAckMsg, IbcPacketReceiveMsg, IbcPacketTimeoutMsg, IbcReceiveResponse, Reply, Response, SubMsg, SubMsgResult, to_binary, Uint64, WasmMsg};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -30,6 +32,41 @@ pub struct TallyResult {
     abstain_count: String,
     no_count: String,
     no_with_veto_count: String,
+}
+
+impl TallyResult {
+    fn to_weighted_options(self) -> Vec<WeightedVoteOption> {
+        let mut vec: Vec<WeightedVoteOption> = vec![];
+        let yes = Decimal::from_str(self.yes_count.as_str());
+        if yes.is_ok() && !yes.unwrap().is_zero() {
+            vec.push(WeightedVoteOption {
+                option: VoteOption::Yes as i32,
+                weight: self.yes_count.to_string(),
+            })
+        }
+        let abstain = Decimal::from_str(self.abstain_count.as_str());
+        if abstain.is_ok() && !abstain.unwrap().is_zero() {
+            vec.push(WeightedVoteOption {
+                option: VoteOption::Abstain as i32,
+                weight: self.abstain_count.to_string(),
+            })
+        }
+        let no = Decimal::from_str(self.no_count.as_str());
+        if no.is_ok() && !no.unwrap().is_zero() {
+            vec.push(WeightedVoteOption {
+                option: VoteOption::No as i32,
+                weight: self.no_count.to_string(),
+            })
+        }
+        let no_with_veto = Decimal::from_str(self.no_with_veto_count.as_str());
+        if no_with_veto.is_ok() && !no_with_veto.unwrap().is_zero() {
+            vec.push(WeightedVoteOption {
+                option: VoteOption::NoWithVeto as i32,
+                weight: self.no_with_veto_count.to_string(),
+            })
+        }
+        return vec;
+    }
 }
 
 #[cw_serde]
@@ -122,8 +159,7 @@ pub fn ibc_packet_receive(
     let packet = msg.packet;
 
     do_ibc_packet_receive(deps, &packet).or_else(|err| {
-        Ok(IbcReceiveResponse::new()
-            .set_ack(ack_fail(err.to_string())))  // TODO add attributes
+        Ok(IbcReceiveResponse::new().set_ack(ack_fail(err.to_string()))) // TODO add attributes
     })
 }
 
@@ -138,18 +174,10 @@ fn do_ibc_packet_receive(
 
     let proposal = packet_data.proposal_tally_result_packet.proposal_id;
     let tally_result = packet_data.proposal_tally_result_packet.tally_result;
-    let vote_msg = ExecuteMsg::Vote(
-        VoteMsg {
-            proposal: proposal.u64(),
-            options: vec![
-                // FIXME check if tally result weights are zero and ignore them
-                WeightedVoteOption { option: VoteOption::Yes as i32, weight: tally_result.yes_count.to_string() },
-                WeightedVoteOption { option: VoteOption::Abstain as i32, weight: tally_result.abstain_count.to_string() },
-                WeightedVoteOption { option: VoteOption::No as i32, weight: tally_result.no_count.to_string() },
-                WeightedVoteOption { option: VoteOption::NoWithVeto as i32, weight: tally_result.no_with_veto_count.to_string() },
-            ],
-        }
-    );
+    let vote_msg = ExecuteMsg::Vote(VoteMsg {
+        proposal: proposal.u64(),
+        options: tally_result.to_weighted_options(),
+    });
     let config = CONFIG.load(deps.storage)?;
 
     let wasm_msg = WasmMsg::Execute {
@@ -174,7 +202,7 @@ pub fn reply(_deps: DepsMut, _env: Env, reply: Reply) -> Result<Response, Contra
     match reply.id {
         VOTE_ID => match reply.result {
             SubMsgResult::Ok(_) => Ok(Response::new()),
-            SubMsgResult::Err(err) => Ok(Response::new().set_data(ack_fail(err)))
+            SubMsgResult::Err(err) => Ok(Response::new().set_data(ack_fail(err))),
         },
         _ => Err(ContractError::UnknownReplyId { id: reply.id }),
     }
@@ -208,6 +236,20 @@ mod test {
     use super::*;
 
     #[test]
+    fn test_tally_result() {
+        let tally_result = TallyResult {
+            yes_count: "0.9".to_string(),
+            abstain_count: "".to_string(),
+            no_count: "0".to_string(),
+            no_with_veto_count: "x".to_string(),
+        };
+        let weighted_options = tally_result.to_weighted_options();
+        assert_eq!(1, weighted_options.len());
+        assert_eq!(VoteOption::Yes as i32, weighted_options[0].option);
+        assert_eq!("0.9", weighted_options[0].weight);
+    }
+
+    #[test]
     fn test_packet_receive() {
         let mut deps = setup(&["channel-0"]);
         let data = PGovPacketData {
@@ -220,7 +262,7 @@ mod test {
                     no_count: "0".to_string(),
                     no_with_veto_count: "0".to_string(),
                 },
-            }
+            },
         };
         let packet = IbcPacket::new(
             to_binary(&data).unwrap(),

@@ -3,8 +3,6 @@ use cosmwasm_std::{Addr, IbcEndpoint};
 use cw_controllers::Admin;
 use cw_storage_plus::{Item, Map};
 
-
-
 pub const ADMIN: Admin = Admin::new("admin");
 
 pub const CONFIG: Item<Config> = Item::new("pgov_config");
@@ -26,9 +24,4 @@ pub struct ChannelInfo {
     pub counterparty_endpoint: IbcEndpoint,
     /// the connection this exists on (you can use to query client/consensus info)
     pub connection_id: String,
-}
-
-#[cw_serde]
-pub struct ReplyArgs {
-    pub channel: String,
 }

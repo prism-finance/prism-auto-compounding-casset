@@ -1,10 +1,10 @@
 #![cfg(test)]
 
-use cosmwasm_std::{
-    DepsMut, IbcChannel, IbcChannelConnectMsg, IbcChannelOpenMsg, IbcEndpoint, OwnedDeps,
-};
 use cosmwasm_std::testing::{
     mock_dependencies, mock_env, mock_info, MockApi, MockQuerier, MockStorage,
+};
+use cosmwasm_std::{
+    DepsMut, IbcChannel, IbcChannelConnectMsg, IbcChannelOpenMsg, IbcEndpoint, OwnedDeps,
 };
 
 use crate::contract::instantiate;
@@ -52,9 +52,7 @@ pub fn add_channel(mut deps: DepsMut, channel_id: &str) {
     ibc_channel_connect(deps.branch(), mock_env(), connect_msg).unwrap();
 }
 
-pub fn setup(
-    channels: &[&str],
-) -> OwnedDeps<MockStorage, MockApi, MockQuerier> {
+pub fn setup(channels: &[&str]) -> OwnedDeps<MockStorage, MockApi, MockQuerier> {
     let mut deps = mock_dependencies();
 
     // instantiate an empty contract

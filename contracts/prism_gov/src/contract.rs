@@ -1,11 +1,17 @@
 // TODO CW2
-use cosmwasm_std::{Binary, Deps, DepsMut, Env, IbcQuery, MessageInfo, Order, PortIdResponse, Response, StdResult, to_binary};
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
+use cosmwasm_std::{
+    to_binary, Binary, Deps, DepsMut, Env, IbcQuery, MessageInfo, Order, PortIdResponse, Response,
+    StdResult,
+};
 
 use crate::error::ContractError;
-use crate::msg::{ChannelResponse, ConfigResponse, ExecuteMsg, InitMsg, ListChannelsResponse, PortResponse, QueryMsg};
-use crate::state::{ADMIN, CHANNEL_INFO, Config, CONFIG};
+use crate::msg::{
+    ChannelResponse, ConfigResponse, ExecuteMsg, InitMsg, ListChannelsResponse, PortResponse,
+    QueryMsg,
+};
+use crate::state::{Config, ADMIN, CHANNEL_INFO, CONFIG};
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -34,8 +40,7 @@ pub fn execute(
     _info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
-    match msg {
-    }
+    match msg {}
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -80,8 +85,8 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
 
 #[cfg(test)]
 mod test {
+    use cosmwasm_std::testing::mock_env;
     use cosmwasm_std::{from_binary, StdError};
-    use cosmwasm_std::testing::{mock_env};
 
     use crate::test_helpers::*;
 
@@ -104,7 +109,7 @@ mod test {
                 id: "channel-3".to_string(),
             },
         )
-            .unwrap();
+        .unwrap();
         let chan_res: ChannelResponse = from_binary(&raw_channel).unwrap();
         assert_eq!(chan_res.info, mock_channel_info("channel-3"));
 
@@ -115,7 +120,7 @@ mod test {
                 id: "channel-10".to_string(),
             },
         )
-            .unwrap_err();
+        .unwrap_err();
         assert_eq!(err, StdError::not_found("prism_gov::state::ChannelInfo"));
     }
 }

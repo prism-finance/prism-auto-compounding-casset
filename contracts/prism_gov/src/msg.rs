@@ -9,8 +9,7 @@ pub struct InitMsg {
 }
 
 #[cw_serde]
-pub enum ExecuteMsg {
-}
+pub enum ExecuteMsg {}
 
 #[cw_serde]
 #[derive(QueryResponses)]
