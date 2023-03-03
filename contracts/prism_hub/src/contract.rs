@@ -1,5 +1,6 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
+use cosmwasm_std::DistributionMsg::SetWithdrawAddress;
 use cosmwasm_std::{
     attr, from_binary, to_binary, Addr, Binary, CosmosMsg, Decimal, Deps, DepsMut, DistributionMsg,
     Env, MessageInfo, QueryRequest, Response, StakingMsg, StdError, StdResult, SubMsg, Uint128,
@@ -19,12 +20,14 @@ use crate::unbond::{execute_unbond, execute_withdraw_unbonded};
 
 use crate::autho_compounding::execute_update_exchange_rate;
 use crate::bond::execute_bond;
+use crate::migration::migrate_config;
 use crate::utility::{is_contract_paused, unwrap_assert_admin, validate_params};
 use basset::hub::{
     AllHistoryResponse, Config, ConfigResponse, CurrentBatch, CurrentBatchResponse, Cw20HookMsg,
-    ExecuteMsg, InstantiateMsg, Parameters, QueryMsg, State, StateResponse, UnbondRequestsResponse,
-    WhitelistedValidatorsResponse, WithdrawableUnbondedResponse,
+    ExecuteMsg, InstantiateMsg, MigrateMsg, Parameters, QueryMsg, State, StateResponse,
+    UnbondRequestsResponse, WhitelistedValidatorsResponse, WithdrawableUnbondedResponse,
 };
+use basset::rewards::ExecuteMsg::ProcessRewards;
 use cw20::{Cw20QueryMsg, Cw20ReceiveMsg, TokenInfoResponse};
 use cw_controllers::AdminError;
 
@@ -57,6 +60,7 @@ pub fn instantiate(
     let data = Config {
         token_contract: None,
         protocol_fee_collector: None,
+        rewards_contract: Some(deps.api.addr_canonicalize(&msg.rewards_contract)?),
     };
     CONFIG.save(deps.storage, &data)?;
 
@@ -110,6 +114,10 @@ pub fn instantiate(
     messages.push(SubMsg::new(CosmosMsg::Staking(StakingMsg::Delegate {
         validator: msg.validator.to_string(),
         amount: payment.clone(),
+    })));
+
+    messages.push(SubMsg::new(CosmosMsg::Distribution(SetWithdrawAddress {
+        address: msg.rewards_contract,
     })));
 
     Ok(Response::new()
@@ -241,21 +249,23 @@ pub fn execute_update_global(deps: DepsMut, env: Env) -> StdResult<Response> {
     let contract_addr = env.contract.address.clone();
 
     let param = PARAMETERS.load(deps.storage)?;
+    let reward_contract = deps
+        .api
+        .addr_humanize(&CONFIG.load(deps.storage)?.rewards_contract.unwrap())?;
 
     // Send withdraw message
     let mut withdraw_msgs = withdraw_all_rewards(&deps, contract_addr.clone())?;
     messages.append(&mut withdraw_msgs);
 
-    let balances = deps.querier.query_all_balances(contract_addr.to_string())?;
-    let principle_balances_before_update = balances
-        .iter()
-        .find(|x| x.denom == param.underlying_coin_denom)
-        .unwrap()
-        .amount;
+    // messages.push(SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
+    //     contract_addr: env.contract.address.to_string(),
+    //     msg: to_binary(&ExecuteMsg::UpdateExchangeRate {}).unwrap(),
+    //     funds: vec![],
+    // })));
 
     messages.push(SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: contract_addr.to_string(),
-        msg: to_binary(&ExecuteMsg::UpdateExchangeRate {}).unwrap(),
+        contract_addr: reward_contract.to_string(),
+        msg: to_binary(&ProcessRewards {}).unwrap(),
         funds: vec![],
     })));
 
@@ -384,9 +394,21 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
         None
     };
 
+    let rewards_contract: Option<String> = if config.rewards_contract.is_some() {
+        Some(
+            deps.api
+                .addr_humanize(&config.rewards_contract.unwrap())
+                .unwrap()
+                .to_string(),
+        )
+    } else {
+        None
+    };
+
     Ok(ConfigResponse {
         token_contract: token,
         protocol_fee_collector: fee_collector,
+        rewards_contract,
     })
 }
 
@@ -475,4 +497,20 @@ fn query_unbond_requests_limitation(
     let requests = all_unbond_history(deps.storage, start, limit)?;
     let res = AllHistoryResponse { history: requests };
     Ok(res)
+}
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn migrate(deps: DepsMut, _env: Env, msg: MigrateMsg) -> StdResult<Response> {
+    //set the rewards contract as the receiver of the rewards
+
+    let messages: Vec<CosmosMsg> = vec![CosmosMsg::Distribution(SetWithdrawAddress {
+        address: msg.rewards_contract.clone(),
+    })];
+
+    let rewards_contract = deps.api.addr_canonicalize(&msg.rewards_contract)?;
+    migrate_config(deps.storage, Some(rewards_contract))?;
+
+    Ok(Response::new()
+        .add_messages(messages)
+        .add_attributes(vec![attr("action", "migration")]))
 }

@@ -71,6 +71,7 @@ impl WasmMockQuerier {
                     let config = Config {
                         token_contract: Some(api.addr_canonicalize("token").unwrap()),
                         protocol_fee_collector: None,
+                        rewards_contract: None,
                     };
                     SystemResult::Ok(ContractResult::from(to_binary(
                         &to_binary(&config).unwrap(),
