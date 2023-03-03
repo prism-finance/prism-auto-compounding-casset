@@ -43,6 +43,7 @@ use super::mock_querier::{mock_dependencies as dependencies, WasmMockQuerier};
 use crate::math::decimal_division;
 use crate::state::{read_unbond_wait_list, ADMIN, PAUSE};
 use basset::hub::QueryMsg::{Admin, AllHistory, UnbondRequests, WithdrawableUnbonded};
+use basset::rewards::ExecuteMsg::ProcessRewards;
 use cw20::Cw20ExecuteMsg::{Burn, Mint};
 use cw_controllers::AdminResponse;
 use std::borrow::BorrowMut;
@@ -90,6 +91,7 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
         er_threshold: Decimal::one(),
         validator,
         protocol_fee: Default::default(),
+        rewards_contract: "rewards_contract".to_string(),
     };
 
     let owner_info = mock_info(owner.as_str(), &[coin(1000000, "uluna")]);
@@ -162,6 +164,7 @@ fn proper_initialization() {
         er_threshold: Decimal::one(),
         validator: validator.address.clone(),
         protocol_fee: Default::default(),
+        rewards_contract: "rewards_contract".to_string(),
     };
 
     let _owner = "owner1";
@@ -169,7 +172,7 @@ fn proper_initialization() {
 
     // we can just call .unwrap() to assert this was a success
     let res: Response = instantiate(deps.as_mut(), mock_env(), owner_info.clone(), msg).unwrap();
-    assert_eq!(2, res.messages.len());
+    assert_eq!(3, res.messages.len());
 
     let register_validator = ExecuteMsg::RegisterValidator {
         validator: validator.address.clone(),
@@ -188,6 +191,14 @@ fn proper_initialization() {
     }));
 
     assert_eq!(&res.messages[1], &delegate_msg);
+
+    let set_rewards_address = SubMsg::new(CosmosMsg::Distribution(
+        DistributionMsg::SetWithdrawAddress {
+            address: "rewards_contract".to_string(),
+        },
+    ));
+
+    assert_eq!(&res.messages[2], &set_rewards_address);
 
     // check parameters storage
     let params = QueryMsg::Parameters {};
@@ -221,6 +232,7 @@ fn proper_initialization() {
     let expected_conf = ConfigResponse {
         token_contract: None,
         protocol_fee_collector: None,
+        rewards_contract: Some("rewards_contract".to_string()),
     };
 
     assert_eq!(expected_conf, query_conf);
@@ -619,8 +631,8 @@ pub fn proper_update_global_index() {
     assert_eq!(
         res.messages[0],
         SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
-            contract_addr: MOCK_CONTRACT_ADDR.to_string(),
-            msg: to_binary(&ExecuteMsg::UpdateExchangeRate {}).unwrap(),
+            contract_addr: "rewards_contract".to_string(),
+            msg: to_binary(&ProcessRewards {}).unwrap(),
             funds: vec![],
         }))
     );
@@ -669,7 +681,7 @@ pub fn proper_update_global_index() {
             msg: _,
             funds: _,
         }) => {
-            assert_eq!(contract_addr, MOCK_CONTRACT_ADDR);
+            assert_eq!(contract_addr, "rewards_contract");
         }
         _ => panic!("Unexpected message: {:?}", swap),
     }
@@ -735,8 +747,8 @@ pub fn proper_update_exchange_rate() {
     assert_eq!(
         res.messages[1],
         SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
-            contract_addr: MOCK_CONTRACT_ADDR.to_string(),
-            msg: to_binary(&ExecuteMsg::UpdateExchangeRate {}).unwrap(),
+            contract_addr: "rewards_contract".to_string(),
+            msg: to_binary(&ProcessRewards {}).unwrap(),
             funds: vec![],
         }))
     );
@@ -750,7 +762,7 @@ pub fn proper_update_exchange_rate() {
 
     let update_exchange_rate = ExecuteMsg::UpdateExchangeRate {};
 
-    let info = mock_info(MOCK_CONTRACT_ADDR, &[]);
+    let info = mock_info("rewards_contract", &[Coin::new(900, "uluna")]);
     let res = execute(deps.as_mut(), mock_env(), info, update_exchange_rate).unwrap();
 
     assert_eq!(res.messages.len(), 1);
@@ -782,15 +794,15 @@ pub fn proper_update_exchange_rate() {
     assert_eq!(
         res.messages[1],
         SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
-            contract_addr: MOCK_CONTRACT_ADDR.to_string(),
-            msg: to_binary(&ExecuteMsg::UpdateExchangeRate {}).unwrap(),
+            contract_addr: "rewards_contract".to_string(),
+            msg: to_binary(&ProcessRewards {}).unwrap(),
             funds: vec![],
         }))
     );
 
     let update_exchange_rate = ExecuteMsg::UpdateExchangeRate {};
 
-    let info = mock_info(MOCK_CONTRACT_ADDR, &[]);
+    let info = mock_info("rewards_contract", &[Coin::new(100, "uluna")]);
     let res = execute(deps.as_mut(), mock_env(), info, update_exchange_rate).unwrap();
 
     assert_eq!(res.messages.len(), 1);
@@ -2897,7 +2909,7 @@ pub fn proper_protocol_fee() {
             msg: _,
             funds: _,
         }) => {
-            assert_eq!(contract_addr, MOCK_CONTRACT_ADDR);
+            assert_eq!(contract_addr, "rewards_contract");
         }
         _ => panic!("Unexpected message: {:?}", swap),
     }
@@ -2924,7 +2936,7 @@ pub fn proper_protocol_fee() {
         protocol_fee_collector
     );
 
-    let info = mock_info(MOCK_CONTRACT_ADDR, &[]);
+    let info = mock_info("rewards_contract", &[Coin::new(100, "uluna")]);
     let res = execute(deps.as_mut(), mock_env(), info, update_exchange_rate).unwrap();
 
     assert_eq!(res.messages.len(), 2);
@@ -2933,7 +2945,7 @@ pub fn proper_protocol_fee() {
         res.messages[0],
         SubMsg::new(CosmosMsg::Bank(BankMsg::Send {
             to_address: "fee_collector".to_string(),
-            amount: vec![Coin::new(9u128, "uluna")],
+            amount: vec![Coin::new(1u128, "uluna")],
         })),
     );
 }
