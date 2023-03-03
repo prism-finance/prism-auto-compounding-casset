@@ -14,6 +14,7 @@ pub struct InstantiateMsg {
     pub er_threshold: Decimal,
     pub validator: String,
     pub protocol_fee: Decimal,
+    pub rewards_contract: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
@@ -50,6 +51,7 @@ pub struct Config {
     pub token_contract_registered: bool,
     pub token_contract: Option<CanonicalAddr>,
     pub protocol_fee_collector: Option<CanonicalAddr>,
+    pub rewards_contract: Option<CanonicalAddr>,
 }
 
 impl State {
@@ -191,6 +193,7 @@ pub struct StateResponse {
 pub struct ConfigResponse {
     pub token_contract: Option<String>,
     pub protocol_fee_collector: Option<String>,
+    pub rewards_contract: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
@@ -217,4 +220,9 @@ pub struct UnbondRequestsResponse {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct AllHistoryResponse {
     pub history: Vec<UnbondHistory>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
+pub struct MigrateMsg {
+    pub rewards_contract: String,
 }

@@ -7,6 +7,7 @@ mod autho_compounding;
 mod bond;
 mod config;
 mod math;
+mod migration;
 mod unbond;
 mod utility;
 
